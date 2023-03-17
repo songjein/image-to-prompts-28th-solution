@@ -10,8 +10,9 @@ from scipy import spatial
 from sklearn.model_selection import train_test_split
 from timm.utils import AverageMeter
 from torch import nn
+from torch.nn.utils import clip_grad_norm_
 from torch.optim.lr_scheduler import CosineAnnealingLR
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 
 from dataset import get_dataloaders
 
@@ -60,10 +61,11 @@ def train(train_df, valid_df, model_name, input_size, batch_size, num_epochs, lr
             "cos": AverageMeter(),
         }
         model.train()
-        for X, y in tqdm(dataloaders["train"], leave=False):
+        for X, y in tqdm(dataloaders["train"]):
             X, y = X.to(device), y.to(device)
 
             optimizer.zero_grad()
+
             X_out = model(X)
             target = torch.ones(X.size(0)).to(device)
             loss = criterion(X_out, y, target)
@@ -91,7 +93,7 @@ def train(train_df, valid_df, model_name, input_size, batch_size, num_epochs, lr
             "cos": AverageMeter(),
         }
         model.eval()
-        for X, y in tqdm(dataloaders["val"], leave=False):
+        for X, y in tqdm(dataloaders["val"]):
             X, y = X.to(device), y.to(device)
 
             with torch.no_grad():
@@ -115,7 +117,7 @@ def train(train_df, valid_df, model_name, input_size, batch_size, num_epochs, lr
 
         if val_meters["cos"].avg > best_score:
             best_score = val_meters["cos"].avg
-            torch.save(model.state_dict(), f"{model_name}.pth")
+            torch.save(model.state_dict(), f"outputs_{num_epochs}ep/{model_name}.pth")
 
 
 if __name__ == "__main__":
@@ -132,12 +134,13 @@ if __name__ == "__main__":
 
     df = pd.read_csv("./data/diffusiondb.csv")
     for index, row in df.iterrows():
-        df.at[index, "filepath"] = df.iloc[index, "filepath"].replace(
+        df.at[index, "filepath"] = df.at[index, "filepath"].replace(
             "/kaggle/input/", "./data/"
         )
 
     train_df, valid_df = train_test_split(df, test_size=0.1, random_state=CFG.seed)
 
+    os.makedirs(f"outputs_{CFG.num_epochs}ep", exist_ok=True)
     train(
         train_df,
         valid_df,

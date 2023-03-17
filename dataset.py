@@ -15,7 +15,6 @@ def get_transformation_for_train() -> A.Compose:
     """
     transform = A.Compose(
         [
-            A.RandomBrightnessContrast(brightness_limit=0.1, contrast_limit=0.1, p=0.5),
             A.OneOf(
                 [
                     A.MotionBlur(blur_limit=3),
@@ -26,14 +25,6 @@ def get_transformation_for_train() -> A.Compose:
             ),
             A.VerticalFlip(p=0.5),
             A.HorizontalFlip(p=0.5),
-            A.ShiftScaleRotate(
-                shift_limit=0.2,
-                scale_limit=0.2,
-                rotate_limit=20,
-                interpolation=cv2.INTER_LINEAR,
-                border_mode=cv2.BORDER_REFLECT_101,
-                p=0.5,
-            ),
         ]
     )
     return transform

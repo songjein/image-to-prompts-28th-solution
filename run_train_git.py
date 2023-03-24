@@ -81,7 +81,8 @@ if __name__ == "__main__":
 
     wandb.login()
 
-    epochs = 50
+    memo = "git-model-2"
+    epochs = 10
     batch_size = 32
     valid_batch_size = 32
     learning_rate = 5e-5
@@ -90,7 +91,7 @@ if __name__ == "__main__":
     seed = 42
 
     wandb.init(
-        name="git-model",
+        name=memo,
         project="learning-equality",
         config={
             "epochs": epochs,
@@ -102,6 +103,9 @@ if __name__ == "__main__":
             "seed": seed,
         },
     )
+
+    output_path = f"output_{memo}"
+    os.makedirs(output_path, exist_ok=True)
 
     seed_everything(seed)
 
@@ -155,7 +159,12 @@ if __name__ == "__main__":
 
                 if valid_score > best_score:
                     best_score = valid_score
-                    os.makedirs(f"outputs_{epoch}ep/", exist_ok=True)
-                    torch.save(model.state_dict(), f"outputs_{epoch}ep/best_model.pth")
 
-        torch.save(model.state_dict(), f"outputs_{epoch}ep/last_model.pth")
+                    torch.save(
+                        model.state_dict(),
+                        os.path.join(output_path, f"best_model_ep_{epoch}.pth"),
+                    )
+
+        torch.save(
+            model.state_dict(), os.path.join(output_path, f"last_model_ep_{epoch}.pth")
+        )

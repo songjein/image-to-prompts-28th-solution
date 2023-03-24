@@ -157,7 +157,7 @@ if __name__ == "__main__":
                 valid_score = evaluate(valid_dataloader, model)
                 wandb.log({"valid_loss": valid_score})
 
-                if valid_score > best_score:
+                if valid_score < best_score:
                     best_score = valid_score
 
                     torch.save(

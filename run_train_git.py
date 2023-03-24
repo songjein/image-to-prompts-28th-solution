@@ -6,10 +6,13 @@ import numpy as np
 import torch
 from datasets import load_dataset
 from timm.utils import AverageMeter
-from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
-from transformers import AutoModelForCausalLM, AutoProcessor
+from transformers import (
+    AutoModelForCausalLM,
+    AutoProcessor,
+    get_cosine_schedule_with_warmup,
+)
 
 import wandb
 
@@ -81,20 +84,22 @@ if __name__ == "__main__":
 
     wandb.login()
 
-    epochs = 5
-    batch_size = 32
+    model_name = "microsoft/git-large-coco"
+    epochs = 3
+    batch_size = 8
     valid_batch_size = 32
-    learning_rate = 5e-5
+    learning_rate = 1e-5
     valid_steps = 1000
     warmup_ratio = 0.05
     seed = 42
-    memo = f"git-model-{seed}s-{epochs}ep"
+    memo = f"git-model-{seed}s-{epochs}ep-{model_name}"
 
     wandb.init(
         name=memo,
         project="prompts-to-image",
         config={
             "epochs": epochs,
+            "model_name": model_name,
             "batch_size": batch_size,
             "learning_rate": learning_rate,
             "valid_batch_size": valid_batch_size,
@@ -114,7 +119,7 @@ if __name__ == "__main__":
         "imagefolder", data_dir="./diffusion", split="validation"
     )
 
-    processor = AutoProcessor.from_pretrained("microsoft/git-base")
+    processor = AutoProcessor.from_pretrained(model_name)
 
     train_dataset = ImageCaptioningDataset(train_dataset, processor)
     valid_dataset = ImageCaptioningDataset(valid_dataset, processor)
@@ -123,13 +128,14 @@ if __name__ == "__main__":
     train_dataloader = DataLoader(train_dataset, shuffle=True, batch_size=batch_size)
     valid_dataloader = DataLoader(valid_dataset, shuffle=True, batch_size=batch_size)
 
-    model = AutoModelForCausalLM.from_pretrained("microsoft/git-base")
+    model = AutoModelForCausalLM.from_pretrained(model_name)
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)
 
-    ttl_iters = epochs * len(train_dataloader)
-    scheduler = CosineAnnealingLR(optimizer, T_max=ttl_iters, eta_min=1e-6)
+    total_steps = len(train_dataloader)
+    warmup_steps = int(total_steps * warmup_ratio)
+    scheduler = get_cosine_schedule_with_warmup(optimizer, warmup_steps, total_steps)
 
     model.train()
 

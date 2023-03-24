@@ -5,6 +5,7 @@ import sys
 import numpy as np
 import torch
 from datasets import load_dataset
+from timm.utils import AverageMeter
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
@@ -51,7 +52,10 @@ class ImageCaptioningDataset(Dataset):
 def evaluate(valid_dataloader, model):
     model.eval()
     data_loader_tqdm = tqdm(valid_dataloader, file=sys.stdout)
-    total_loss = torch.tensor(0)
+
+    val_meters = {
+        "loss": AverageMeter(),
+    }
 
     with torch.no_grad():
         for idx, batch in enumerate(data_loader_tqdm):
@@ -62,13 +66,14 @@ def evaluate(valid_dataloader, model):
                 input_ids=input_ids, pixel_values=pixel_values, labels=input_ids
             )
             loss = outputs.loss
-            total_loss += loss
+
+            val_meters["loss"].update(loss.item(), n=input_ids.size(0))
 
             data_loader_tqdm.set_description(f"Epoch {epoch}, loss: {loss.item()}")
 
     model.train()
 
-    return total_loss.item()
+    return val_meters["loss"].avg
 
 
 if __name__ == "__main__":
@@ -77,10 +82,10 @@ if __name__ == "__main__":
     wandb.login()
 
     epochs = 50
-    batch_size = 4
-    valid_batch_size = 4
+    batch_size = 32
+    valid_batch_size = 32
     learning_rate = 5e-5
-    valid_steps = 10
+    valid_steps = 1000
     warmup_ratio = 0.05
     seed = 42
 
@@ -144,7 +149,7 @@ if __name__ == "__main__":
             scheduler.step()
             optimizer.zero_grad()
 
-            if idx % valid_steps == 0:
+            if idx > 0 and idx % valid_steps == 0:
                 valid_score = evaluate(valid_dataloader, model)
                 wandb.log({"valid_loss": valid_score})
 
@@ -152,3 +157,5 @@ if __name__ == "__main__":
                     best_score = valid_score
                     os.makedirs(f"outputs_{epoch}ep/", exist_ok=True)
                     torch.save(model.state_dict(), f"outputs_{epoch}ep/best_model.pth")
+
+        torch.save(model.state_dict(), f"outputs_{epoch}ep/last_model.pth")

@@ -81,18 +81,18 @@ if __name__ == "__main__":
 
     wandb.login()
 
-    memo = "git-model-2"
-    epochs = 10
+    epochs = 5
     batch_size = 32
     valid_batch_size = 32
     learning_rate = 5e-5
     valid_steps = 1000
     warmup_ratio = 0.05
     seed = 42
+    memo = f"git-model-{seed}s-{epochs}ep"
 
     wandb.init(
         name=memo,
-        project="learning-equality",
+        project="prompts-to-image",
         config={
             "epochs": epochs,
             "batch_size": batch_size,

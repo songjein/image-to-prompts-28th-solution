@@ -8,11 +8,8 @@ from datasets import load_dataset
 from timm.utils import AverageMeter
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
-from transformers import (
-    AutoModelForCausalLM,
-    AutoProcessor,
-    get_cosine_schedule_with_warmup,
-)
+from transformers import (AutoModelForCausalLM, AutoProcessor,
+                          get_cosine_schedule_with_warmup)
 
 import wandb
 
@@ -86,9 +83,9 @@ if __name__ == "__main__":
 
     model_name = "microsoft/git-large-coco"
     epochs = 3
-    batch_size = 8
-    valid_batch_size = 32
-    learning_rate = 1e-5
+    batch_size = 16
+    valid_batch_size = 16
+    learning_rate = 5e-5
     valid_steps = 1000
     warmup_ratio = 0.05
     seed = 42

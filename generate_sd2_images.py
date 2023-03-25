@@ -11,6 +11,7 @@ group.add_argument("--gpu-idx", type=int, default=0)
 group.add_argument("--stride-idx", type=int, default=0)
 group.add_argument("--num-gpus", type=int, default=4)
 group.add_argument("--image-dir-path", type=str, default="./diffusion/images")
+group.add_argument("--prompts-path", type=str, default="./diffusion/prompts-large.txt")
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -45,7 +46,7 @@ if __name__ == "__main__":
         ).images[0]
         return image
 
-    with open("prompts-large.txt") as f:
+    with open(args.prompts_path) as f:
         for idx, line in enumerate(tqdm(f)):
             prompt = line.strip()
 

@@ -4,14 +4,16 @@ import sys
 
 import numpy as np
 import torch
+import wandb
 from datasets import load_dataset
 from timm.utils import AverageMeter
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
-from transformers import (AutoModelForCausalLM, AutoProcessor,
-                          get_cosine_schedule_with_warmup)
-
-import wandb
+from transformers import (
+    AutoModelForCausalLM,
+    AutoProcessor,
+    get_cosine_schedule_with_warmup,
+)
 
 
 def seed_everything(seed):
@@ -136,7 +138,7 @@ if __name__ == "__main__":
 
     model.train()
 
-    best_score = -1.0
+    best_score = 9999
     for epoch in range(epochs):
         data_loader_tqdm = tqdm(train_dataloader, file=sys.stdout)
         for idx, batch in enumerate(data_loader_tqdm):

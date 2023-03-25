@@ -4,16 +4,15 @@ import sys
 
 import numpy as np
 import torch
-import wandb
 from datasets import load_dataset
 from timm.utils import AverageMeter
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
-from transformers import (
-    AutoModelForCausalLM,
-    AutoProcessor,
-    get_cosine_schedule_with_warmup,
-)
+from transformers import (AutoModelForCausalLM, AutoProcessor,
+                          BlipForConditionalGeneration,
+                          get_cosine_schedule_with_warmup)
+
+import wandb
 
 
 def seed_everything(seed):
@@ -83,7 +82,8 @@ if __name__ == "__main__":
 
     wandb.login()
 
-    model_name = "microsoft/git-large-coco"
+    model_name = "Salesforce/blip-image-captioning-base"
+    # model_name = "microsoft/git-base"
     epochs = 3
     batch_size = 16
     valid_batch_size = 16
@@ -103,7 +103,6 @@ if __name__ == "__main__":
             "learning_rate": learning_rate,
             "valid_batch_size": valid_batch_size,
             "warmup_ratio": warmup_ratio,
-            # "use_fp16": use_fp16,
             "seed": seed,
         },
     )
@@ -127,7 +126,10 @@ if __name__ == "__main__":
     train_dataloader = DataLoader(train_dataset, shuffle=True, batch_size=batch_size)
     valid_dataloader = DataLoader(valid_dataset, shuffle=True, batch_size=batch_size)
 
-    model = AutoModelForCausalLM.from_pretrained(model_name)
+    if "blip" in model_name:
+        model = BlipForConditionalGeneration.from_pretrained(model_name)
+    else:
+        model = AutoModelForCausalLM.from_pretrained(model_name)
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)

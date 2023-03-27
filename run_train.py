@@ -82,8 +82,8 @@ if __name__ == "__main__":
 
     wandb.login()
 
-    model_name = "Salesforce/blip-image-captioning-base"
-    # model_name = "microsoft/git-base"
+    # model_name = "Salesforce/blip-image-captioning-base"
+    model_name = "microsoft/git-base"
     epochs = 3
     batch_size = 16
     valid_batch_size = 16
@@ -112,9 +112,11 @@ if __name__ == "__main__":
 
     seed_everything(seed)
 
-    train_dataset = load_dataset("imagefolder", data_dir="./diffusion", split="train")
+    train_dataset = load_dataset(
+        "imagefolder", data_dir="./diffusion", split="train", num_proc=8
+    )
     valid_dataset = load_dataset(
-        "imagefolder", data_dir="./diffusion", split="validation"
+        "imagefolder", data_dir="./diffusion", split="validation", num_proc=8
     )
 
     processor = AutoProcessor.from_pretrained(model_name)
@@ -169,7 +171,7 @@ if __name__ == "__main__":
 
                     torch.save(
                         model.state_dict(),
-                        os.path.join(output_path, f"best_model_ep_{epoch}.pth"),
+                        os.path.join(output_path, f"best_model.pth"),
                     )
 
         torch.save(

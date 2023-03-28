@@ -3,9 +3,10 @@ import os
 import random
 import re
 import shutil
-from typing import Any, Dict, List, Optional, Union
+from typing import Optional
 
 from langdetect import detect
+from tqdm import tqdm
 
 
 def preprocess(text: str) -> Optional[str]:
@@ -48,9 +49,7 @@ def preprocess(text: str) -> Optional[str]:
         "DOF",
         "dof:",
         "blur:",
-        " das ",
-        " pais ",
-        " mais ",
+        "fzr",
     ]
     for stopword in stopwords:
         if stopword in text.lower():
@@ -64,6 +63,9 @@ def preprocess(text: str) -> Optional[str]:
 
     # 반복된 특수문자 1개로 통일
     text = re.sub(r"([^\w\s])\1+", r"\1", text)
+
+    # n - 5, n 9 패턴 제거
+    text = re.sub(r"\bn\s*-?\s*\d+\b", "", text)
 
     # n과 숫자 사이의 빈칸 제거
     text = re.sub(r"\sn\s*(\d)", r" n\1", text)
@@ -104,6 +106,12 @@ def preprocess(text: str) -> Optional[str]:
         .replace("shuttershock", "")
     )
 
+    # high resolution 제거
+    text = re.sub(r"high-? resolution", "", text, flags=re.IGNORECASE)
+
+    # ar 숫자:숫자 패턴 제거
+    text = re.sub(r"ar\s+\d+\s*:\s*\d+", "", text)
+
     # 구두점 직전의 공백 없애기
     text = re.sub(r"\s*([^\w\s,\.!\?])(?:\s+|$)", r"\1", text)
 
@@ -137,6 +145,9 @@ def preprocess(text: str) -> Optional[str]:
     # 마지막 구두점 제거
     text = re.sub(r"[^\w\s]+$", "", text)
 
+    # 문장 시작 구두점 제거
+    text = re.sub(r"^\W+", "", text)
+
     try:
         if detect(text) != "en":
             return None
@@ -152,7 +163,7 @@ def preprocess(text: str) -> Optional[str]:
 
 if __name__ == "__main__":
     root = "./diffusion/images/"
-    move_file = False
+    move_file = not False
 
     captions = []
     with open("./diffusion/captions.jsonl") as f:
@@ -171,7 +182,7 @@ if __name__ == "__main__":
     visited = set()
     tlens = []
     _train_captions = []
-    for caption in train_captions:
+    for caption in tqdm(train_captions):
         text = preprocess(caption["text"])
         if text is None:
             continue
@@ -181,7 +192,7 @@ if __name__ == "__main__":
         _from = os.path.join(root, caption["file_name"])
         _to = os.path.join("./diffusion/train", caption["file_name"])
         if move_file:
-            shutil.move(_from, _to)
+            shutil.copy(_from, _to)
         _train_captions.append(caption)
 
     train_captions = _train_captions
@@ -189,7 +200,7 @@ if __name__ == "__main__":
     dup_cnt = 0
     vlens = []
     _valid_captions = []
-    for caption in valid_captions:
+    for caption in tqdm(valid_captions):
         text = preprocess(caption["text"])
         if text is None:
             continue
@@ -202,7 +213,7 @@ if __name__ == "__main__":
         _from = os.path.join(root, caption["file_name"])
         _to = os.path.join("./diffusion/validation", caption["file_name"])
         if move_file:
-            shutil.move(_from, _to)
+            shutil.copy(_from, _to)
         _valid_captions.append(caption)
 
     valid_captions = _valid_captions

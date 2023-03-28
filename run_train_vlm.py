@@ -8,9 +8,12 @@ from datasets import load_dataset
 from timm.utils import AverageMeter
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
-from transformers import (AutoModelForCausalLM, AutoProcessor,
-                          BlipForConditionalGeneration,
-                          get_cosine_schedule_with_warmup)
+from transformers import (
+    AutoModelForCausalLM,
+    AutoProcessor,
+    BlipForConditionalGeneration,
+    get_cosine_schedule_with_warmup,
+)
 
 import wandb
 
@@ -84,7 +87,7 @@ if __name__ == "__main__":
 
     # model_name = "Salesforce/blip-image-captioning-base"
     model_name = "microsoft/git-base"
-    epochs = 3
+    epochs = 10
     batch_size = 16
     valid_batch_size = 16
     learning_rate = 5e-5

@@ -126,7 +126,7 @@ if __name__ == "__main__":
         model_name = "vit_base_patch16_224"
         input_size = 224
         batch_size = 64
-        num_epochs = 3
+        num_epochs = 5
         lr = 1e-4
         seed = 42
 

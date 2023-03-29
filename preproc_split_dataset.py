@@ -13,9 +13,31 @@ def preprocess(text: str) -> Optional[str]:
     text = text.strip()
     orig_text = text
 
-    # 빈칸으로 쪼갰을 때 각 단어의 평균 길이가 3 이하라면 필터링
-    len_sub_words = [len(word) for word in text.split()]
-    if sum(len_sub_words) / len(len_sub_words) < 3:
+    # 길이 기준 필터링 (하위 10%, 상위 5%)
+    if len(text) < 32 or len(text) > 256:
+        return None
+
+    words = text.split()
+    uniq_words = set(words)
+
+    # 단어 개수 기준 필터링 (반복 케이스 잡기 위해 set 적용)
+    num_uniq_words = len(uniq_words)
+    if num_uniq_words <= 5:
+        return None
+
+    # 반복 단어 개수 비율
+    diff_uniq_words_ratio = (len(words) - len(uniq_words)) / len(words)
+    if diff_uniq_words_ratio > 0.55:
+        return None
+
+    # 빈칸으로 쪼갰을 때 각 단어의 평균 길이가 5 이하라면 필터링
+    len_sub_words = [len(word) for word in words]
+    if sum(len_sub_words) / len(len_sub_words) < 5:
+        return None
+
+    patterns = r"(?i)\b(i'll|i'm|i am|if you|isn't|i need|help me|i like)\b"
+
+    if re.search(patterns, text, re.IGNORECASE):
         return None
 
     concat_text = text.replace(" ", "")
@@ -26,6 +48,7 @@ def preprocess(text: str) -> Optional[str]:
         return None
 
     stopwords = [
+        "opengl",
         "unreal engine",
         "award winning",
         "award-winning",

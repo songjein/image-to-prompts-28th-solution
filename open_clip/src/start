@@ -1,0 +1,18 @@
+CUDA_VISIBLE_DEVICES=3 python -m training.main \
+         --dataset-type csv \
+         --train-data="/home/jein_scatterlab_co_kr/workspace/image-to-prompts/diffusion/train_coca.csv" \
+         --val-data="/home/jein_scatterlab_co_kr/workspace/image-to-prompts/diffusion/valid_coca.csv" \
+         --batch-size 32 \
+         --warmup 1000 \
+         --epochs 3 \
+         --lr 3e-4 \
+         --wd 0.1 \
+         --precision amp \
+         --workers 6 \
+         --model "coca_ViT-L-14" \
+         --coca-contrastive-loss-weight 0 \
+         --coca-caption-loss-weight 1 \
+         --name "3ep-v2-data" \
+         --report-to "wandb" \
+         --log-every-n-steps 1000
+

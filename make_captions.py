@@ -1,6 +1,8 @@
 import json
 import os
 
+from langdetect import detect
+
 if __name__ == "__main__":
     captions = []
     with open("./diffusion/prompts-large.txt") as f:
@@ -10,6 +12,13 @@ if __name__ == "__main__":
             if not os.path.exists(path):
                 continue
             prompt = line.strip()
+
+            try:
+                if detect(prompt) != "en":
+                    continue
+            except:
+                print("exception at", prompt)
+
             captions.append(
                 {
                     "file_name": file_name,

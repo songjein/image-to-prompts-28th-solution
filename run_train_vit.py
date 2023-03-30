@@ -1,4 +1,5 @@
 import os
+import json
 import random
 import warnings
 
@@ -117,14 +118,20 @@ def train(train_df, valid_df, model_name, input_size, batch_size, num_epochs, lr
 
         if val_meters["cos"].avg > best_score:
             best_score = val_meters["cos"].avg
-            torch.save(model.state_dict(), f"outputs_{num_epochs}ep/{model_name}.pth")
+            torch.save(
+                model.state_dict(), f"outputs_{num_epochs}ep/{model_name}_best.pth"
+            )
+
+        torch.save(
+            model.state_dict(), f"outputs_{num_epochs}ep/{model_name}_{epoch}ep.pth"
+        )
 
 
 if __name__ == "__main__":
 
     class CFG:
-        model_name = "vit_base_patch16_224"
-        input_size = 224
+        model_name = "vit_base_resnet50_384"
+        input_size = (384, 384)
         batch_size = 64
         num_epochs = 5
         lr = 1e-4
@@ -132,13 +139,33 @@ if __name__ == "__main__":
 
     seed_everything(CFG.seed)
 
-    df = pd.read_csv("./data/diffusiondb.csv")
-    for index, row in df.iterrows():
-        df.at[index, "filepath"] = df.at[index, "filepath"].replace(
-            "/kaggle/input/", "./data/"
-        )
+    with open("./diffusion/train/metadata.jsonl") as f:
+        train_data = {
+            "filepath": [],
+            "prompt": [],
+        }
+        for line in f:
+            item = json.loads(line)
+            train_data["filepath"].append(
+                os.path.join("./diffusion/train/", item["file_name"])
+            )
+            train_data["prompt"].append(item["text"])
 
-    train_df, valid_df = train_test_split(df, test_size=0.1, random_state=CFG.seed)
+        train_df = pd.DataFrame.from_dict(train_data)
+
+    with open("./diffusion/validation/metadata.jsonl") as f:
+        validation_data = {
+            "filepath": [],
+            "prompt": [],
+        }
+        for line in f:
+            item = json.loads(line)
+            validation_data["filepath"].append(
+                os.path.join("./diffusion/validation/", item["file_name"])
+            )
+            validation_data["prompt"].append(item["text"])
+
+        valid_df = pd.DataFrame.from_dict(validation_data)
 
     os.makedirs(f"outputs_{CFG.num_epochs}ep", exist_ok=True)
     train(

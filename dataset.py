@@ -31,9 +31,10 @@ def get_transformation_for_train() -> A.Compose:
 
 
 class DiffusionDataset(Dataset):
-    def __init__(self, df, transform):
+    def __init__(self, df, transform, image_size=(224, 224)):
         self.df = df
         self.transform = transform
+        self.img_size = image_size
 
     def __len__(self):
         return len(self.df)
@@ -47,7 +48,7 @@ class DiffusionDataset(Dataset):
         if self.transform:
             image = self.transform(image=image)["image"]
 
-        image = cv2.resize(image, (224, 224), interpolation=cv2.INTER_AREA)
+        image = cv2.resize(image, self.img_size, interpolation=cv2.INTER_AREA)
         image = image / 255.0
         image = (image - IMAGENET_MEAN_RGB) / IMAGENET_STD_RGB
         image = image.transpose(2, 0, 1)
@@ -72,10 +73,10 @@ class DiffusionCollator:
         return images, prompt_embeddings
 
 
-def get_dataloaders(trn_df, val_df, input_size, batch_size):
+def get_dataloaders(trn_df, val_df, image_size, batch_size):
     train_transform = get_transformation_for_train()
-    trn_dataset = DiffusionDataset(trn_df, train_transform)
-    val_dataset = DiffusionDataset(val_df, None)
+    trn_dataset = DiffusionDataset(trn_df, train_transform, image_size)
+    val_dataset = DiffusionDataset(val_df, None, image_size)
     collator = DiffusionCollator()
 
     dataloaders = {}

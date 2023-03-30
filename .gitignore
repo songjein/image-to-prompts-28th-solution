@@ -1,0 +1,8 @@
+open_clip/
+outputs*/
+output*/
+wandb/
+diffusion/
+*.csv
+*.txt
+__pycache__/

@@ -13,33 +13,6 @@ def preprocess(text: str) -> Optional[str]:
     text = text.strip()
     orig_text = text
 
-    # 길이 기준 필터링 (하위 10%, 상위 5%)
-    if len(text) < 32 or len(text) > 256:
-        return None
-
-    words = text.split()
-    uniq_words = set(words)
-
-    # 단어 개수 기준 필터링 (반복 케이스 잡기 위해 set 적용)
-    num_uniq_words = len(uniq_words)
-    if num_uniq_words <= 5:
-        return None
-
-    # 반복 단어 개수 비율
-    diff_uniq_words_ratio = (len(words) - len(uniq_words)) / len(words)
-    if diff_uniq_words_ratio > 0.55:
-        return None
-
-    # 빈칸으로 쪼갰을 때 각 단어의 평균 길이가 5 이하라면 필터링
-    len_sub_words = [len(word) for word in words]
-    if sum(len_sub_words) / len(len_sub_words) < 5:
-        return None
-
-    patterns = r"(?i)\b(i'll|i'm|i am|if you|isn't|i need|help me|i like)\b"
-
-    if re.search(patterns, text, re.IGNORECASE):
-        return None
-
     concat_text = text.replace(" ", "")
     if "http" in concat_text:
         return None
@@ -49,9 +22,6 @@ def preprocess(text: str) -> Optional[str]:
 
     stopwords = [
         "opengl",
-        "unreal engine",
-        "award winning",
-        "award-winning",
         "sec shutter",
         "second shutter",
         "shutter speed",
@@ -60,6 +30,7 @@ def preprocess(text: str) -> Optional[str]:
         "1/1000",
         "1/2000",
         "cannon",
+        "nikon",
         "canon",
         "kodak",
         "portra",
@@ -78,6 +49,7 @@ def preprocess(text: str) -> Optional[str]:
         if stopword in text.lower():
             return None
 
+    # [1] 전처리
     # 숫자 사이의 빈칸 제거
     text = re.sub(r"(?<=\d)\s+(?=\d)", "", text)
 
@@ -129,8 +101,12 @@ def preprocess(text: str) -> Optional[str]:
         .replace("shuttershock", "")
     )
 
-    # high resolution 제거
+    # high resolution, unreal engine, award winning 제거
     text = re.sub(r"high-? resolution", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"unreal\s?engine", "", text, flags=re.IGNORECASE)
+    text = re.sub(
+        r"award\s?-?winning(\sphotography)?(\sphoto)?", "", text, flags=re.IGNORECASE
+    )
 
     # ar 숫자:숫자 패턴 제거
     text = re.sub(r"ar\s+\d+\s*:\s*\d+", "", text)
@@ -171,6 +147,35 @@ def preprocess(text: str) -> Optional[str]:
     # 문장 시작 구두점 제거
     text = re.sub(r"^\W+", "", text)
 
+    # [2] 필터링
+
+    # 길이 기준 필터링 (하위 5%?, 상위 5%)
+    if len(text) < 16 or len(text) > 256:
+        return None
+
+    words = text.split()
+    uniq_words = set(words)
+
+    # 유니크 단어 개수 기준 필터링 (반복 케이스 잡기 위해 set 적용)
+    num_uniq_words = len(uniq_words)
+    if num_uniq_words <= 3:
+        return None
+
+    # 반복 단어 개수 비율
+    diff_uniq_words_ratio = (len(words) - len(uniq_words)) / len(words)
+    if diff_uniq_words_ratio > 0.55:
+        return None
+
+    # 빈칸으로 쪼갰을 때 각 단어의 평균 길이
+    len_sub_words = [len(word) for word in words]
+    if sum(len_sub_words) / len(len_sub_words) < 2.5:
+        return None
+
+    # 자기 생각 적어놓은 류
+    patterns = r"(?i)\b(i'll|i'm|i am|if you|isn't|i need|help me|i like|i had|you know|i have)\b"
+    if re.search(patterns, text, re.IGNORECASE):
+        return None
+
     try:
         if detect(text) != "en":
             return None
@@ -180,13 +185,11 @@ def preprocess(text: str) -> Optional[str]:
 
     return text
 
-    # NOTE: salchenwursage. 35 mm, , cinelux asa 100
-    # NOTE: 그렇게 많이 안날아가는데, 사진 관련된 애들 (ex. mm포함) 다 날려버려도 될 수도?
-
 
 if __name__ == "__main__":
     root = "./diffusion/images/"
-    move_file = not False
+    copy_file = False
+    make_meta = False
 
     captions = []
     with open("./diffusion/captions.jsonl") as f:
@@ -203,7 +206,7 @@ if __name__ == "__main__":
     os.makedirs("./diffusion/validation/", exist_ok=True)
 
     visited = set()
-    tlens = []
+    train_lens = []
     _train_captions = []
     for caption in tqdm(train_captions):
         text = preprocess(caption["text"])
@@ -211,17 +214,17 @@ if __name__ == "__main__":
             continue
         caption["text"] = text
         visited.add(caption["text"].strip())
-        tlens.append(len(caption["text"].strip()))
+        train_lens.append(len(caption["text"].strip()))
         _from = os.path.join(root, caption["file_name"])
         _to = os.path.join("./diffusion/train", caption["file_name"])
-        if move_file:
+        if copy_file:
             shutil.copy(_from, _to)
         _train_captions.append(caption)
 
     train_captions = _train_captions
 
     dup_cnt = 0
-    vlens = []
+    valid_lens = []
     _valid_captions = []
     for caption in tqdm(valid_captions):
         text = preprocess(caption["text"])
@@ -232,27 +235,28 @@ if __name__ == "__main__":
             print(caption)
             dup_cnt += 1
             continue
-        vlens.append(len(caption["text"].strip()))
+        valid_lens.append(len(caption["text"].strip()))
         _from = os.path.join(root, caption["file_name"])
         _to = os.path.join("./diffusion/validation", caption["file_name"])
-        if move_file:
+        if copy_file:
             shutil.copy(_from, _to)
         _valid_captions.append(caption)
 
     valid_captions = _valid_captions
 
     print(dup_cnt)
-    print("tlens", sum(tlens) / len(tlens))
-    print("vlens", sum(vlens) / len(vlens))
-    print("num train samples", len(tlens))
-    print("num valid samples", len(vlens))
+    print("train_lens", sum(train_lens) / len(train_lens))
+    print("valid_lens", sum(valid_lens) / len(valid_lens))
+    print("num train samples", len(train_lens))
+    print("num valid samples", len(valid_lens))
 
-    with open("./diffusion/train/metadata.jsonl", "w") as f:
-        for caption in train_captions:
-            caption["file_name"] = caption["file_name"]
-            f.write(json.dumps(caption, ensure_ascii=False) + "\n")
+    if make_meta:
+        with open("./diffusion/train/metadata.jsonl", "w") as f:
+            for caption in train_captions:
+                caption["file_name"] = caption["file_name"]
+                f.write(json.dumps(caption, ensure_ascii=False) + "\n")
 
-    with open("./diffusion/validation/metadata.jsonl", "w") as f:
-        for caption in valid_captions:
-            caption["file_name"] = caption["file_name"]
-            f.write(json.dumps(caption, ensure_ascii=False) + "\n")
+        with open("./diffusion/validation/metadata.jsonl", "w") as f:
+            for caption in valid_captions:
+                caption["file_name"] = caption["file_name"]
+                f.write(json.dumps(caption, ensure_ascii=False) + "\n")

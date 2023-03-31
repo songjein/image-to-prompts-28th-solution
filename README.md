@@ -21,6 +21,8 @@
   These are the examples of prompts for generating images.
 
   Make other prompts in the similar style as many as possible, with variety of random scenes, and range from fairly simple to complex with multiple objects and modifiers. Different words from examples are preferred.
+
+  Not preferred topics: [mushroom, jellyfish, giraffe, forest, underwater, street, garden, neon, cityscape, castle, dragon, landscape, sea, coral, tea, trees, cars, fish, mountain, mischievous, mermaid, animals, unicorn, schools, space, rainbow, ancient, skyscrapers, flowers, cabin, beach, fairy, market]
   ```
 
 - 4.0에서 랜덤 10개 가져오고, 학습 프롬프트에서 10개 가져와서 생성
@@ -64,5 +66,7 @@
       - [DiffusionDB 데이터](https://www.kaggle.com/datasets/jeinsong/sd2-images-211238) 대상으로 03/31기준 preproc_split_dataset.py 실행
 - 3/31일 open_prompts 10G(천만건) 데이터에 dedup적용(dedup_prompts.py)
   - 232187 건 (./resources/openprompts_dedup_075.txt)
+  - filter_before_generate_image.py 적용하여 전처리를 미리 적용해 본 후 필터링
+    - 192744 건 (./resources/openprompts_dedup_075_filtered.txt)
 
 4. convert_gustavosta_dataset.py로 gustavosta dataset 변환(train/eval)

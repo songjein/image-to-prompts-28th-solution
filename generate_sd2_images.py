@@ -7,6 +7,7 @@ from tqdm import tqdm
 
 parser = ArgumentParser()
 group = parser.add_argument_group(title="inference settings")
+group.add_argument("--prefix", type=str, default="openprompts")
 group.add_argument("--gpu-idx", type=int, default=0)
 group.add_argument("--stride-idx", type=int, default=0)
 group.add_argument("--num-gpus", type=int, default=4)
@@ -14,6 +15,7 @@ group.add_argument("--image-dir-path", type=str, default="./diffusion/images")
 group.add_argument("--prompts-path", type=str, default="./diffusion/prompts-large.txt")
 
 if __name__ == "__main__":
+    # python generate_sd2_images.py --prefix openprompts --gpu-idx 0 --stride-idx 0 --num-gpus 3 --image-dir-path ./diffusion/openprompts_images/ --prompts-path ./resources/openprompts_dedup_075_filtered.txt
     args = parser.parse_args()
 
     class CFG:
@@ -52,7 +54,7 @@ if __name__ == "__main__":
         for idx, line in enumerate(tqdm(f)):
             prompt = line.strip()
 
-            fn = os.path.join(args.image_dir_path, f"{idx:08d}.jpg")
+            fn = os.path.join(args.image_dir_path, f"{args.prefix}_{idx:08d}.jpg")
             if idx % args.num_gpus != args.stride_idx:
                 continue
 

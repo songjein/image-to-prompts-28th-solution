@@ -46,6 +46,8 @@ if __name__ == "__main__":
         ).images[0]
         return image
 
+    os.makedirs(args.image_dir_path, exist_ok=True)
+
     with open(args.prompts_path) as f:
         for idx, line in enumerate(tqdm(f)):
             prompt = line.strip()

@@ -187,12 +187,12 @@ def preprocess(text: str) -> Optional[str]:
 
 
 if __name__ == "__main__":
-    root = "./diffusion/images/"
+    root = "./diffusion/chatgpt-images/"
     copy_file = False
     make_meta = False
 
     captions = []
-    with open("./diffusion/captions.jsonl") as f:
+    with open("./diffusion/chatgpt_0330_captions.jsonl") as f:
         for line in f:
             captions.append(json.loads(line))
 
@@ -202,8 +202,10 @@ if __name__ == "__main__":
     train_captions = captions[: int(len(captions) * 0.95)]
     valid_captions = captions[int(len(captions) * 0.95) :]
 
-    os.makedirs("./diffusion/train/", exist_ok=True)
-    os.makedirs("./diffusion/validation/", exist_ok=True)
+    train_dir = "./diffusion/chatgpt_0330_train/"
+    valid_dir = "./diffusion/chatgpt_0330_validation/"
+    os.makedirs(train_dir, exist_ok=True)
+    os.makedirs(valid_dir, exist_ok=True)
 
     visited = set()
     train_lens = []
@@ -216,7 +218,7 @@ if __name__ == "__main__":
         visited.add(caption["text"].strip())
         train_lens.append(len(caption["text"].strip()))
         _from = os.path.join(root, caption["file_name"])
-        _to = os.path.join("./diffusion/train", caption["file_name"])
+        _to = os.path.join(train_dir, caption["file_name"])
         if copy_file:
             shutil.copy(_from, _to)
         _train_captions.append(caption)
@@ -237,7 +239,7 @@ if __name__ == "__main__":
             continue
         valid_lens.append(len(caption["text"].strip()))
         _from = os.path.join(root, caption["file_name"])
-        _to = os.path.join("./diffusion/validation", caption["file_name"])
+        _to = os.path.join(valid_dir, caption["file_name"])
         if copy_file:
             shutil.copy(_from, _to)
         _valid_captions.append(caption)
@@ -251,12 +253,12 @@ if __name__ == "__main__":
     print("num valid samples", len(valid_lens))
 
     if make_meta:
-        with open("./diffusion/train/metadata.jsonl", "w") as f:
+        with open(os.path.join(train_dir, "metadata.jsonl"), "w") as f:
             for caption in train_captions:
                 caption["file_name"] = caption["file_name"]
                 f.write(json.dumps(caption, ensure_ascii=False) + "\n")
 
-        with open("./diffusion/validation/metadata.jsonl", "w") as f:
+        with open(os.path.join(valid_dir, "metadata.jsonl"), "w") as f:
             for caption in valid_captions:
                 caption["file_name"] = caption["file_name"]
                 f.write(json.dumps(caption, ensure_ascii=False) + "\n")

@@ -40,7 +40,9 @@ def cosine_similarity(y_trues, y_preds):
     )
 
 
-def train(train_df, valid_df, model_name, input_size, batch_size, num_epochs, lr):
+def train(
+    train_df, valid_df, model_name, input_size, batch_size, num_epochs, lr, output_path
+):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dataloaders = get_dataloaders(train_df, valid_df, input_size, batch_size)
 
@@ -118,28 +120,28 @@ def train(train_df, valid_df, model_name, input_size, batch_size, num_epochs, lr
 
         if val_meters["cos"].avg > best_score:
             best_score = val_meters["cos"].avg
-            torch.save(
-                model.state_dict(), f"outputs_{num_epochs}ep/{model_name}_best.pth"
-            )
+            torch.save(model.state_dict(), f"{output_path}/{model_name}_best.pth")
 
-        torch.save(
-            model.state_dict(), f"outputs_{num_epochs}ep/{model_name}_{epoch}ep.pth"
-        )
+        torch.save(model.state_dict(), f"{output_path}/{model_name}_{epoch}ep.pth")
 
 
 if __name__ == "__main__":
 
     class CFG:
-        model_name = "vit_base_resnet50_384"
-        input_size = (384, 384)
-        batch_size = 64
+        model_name = (
+            "vit_large_patch14_224_clip_laion2b"  # vit_large_patch14_224_clip_laion2b
+        )
+        input_size = (224, 224)
+        batch_size = 256
         num_epochs = 5
         lr = 1e-4
         seed = 42
 
+        output_path = "vit_large_patch14_224_clip_laion2b"
+
     seed_everything(CFG.seed)
 
-    with open("./diffusion/train/metadata.jsonl") as f:
+    with open("./diffusion/train/metadata_dedup.jsonl") as f:
         train_data = {
             "filepath": [],
             "prompt": [],
@@ -153,7 +155,7 @@ if __name__ == "__main__":
 
         train_df = pd.DataFrame.from_dict(train_data)
 
-    with open("./diffusion/validation/metadata.jsonl") as f:
+    with open("./diffusion/validation/metadata_dedup.jsonl") as f:
         validation_data = {
             "filepath": [],
             "prompt": [],
@@ -167,7 +169,7 @@ if __name__ == "__main__":
 
         valid_df = pd.DataFrame.from_dict(validation_data)
 
-    os.makedirs(f"outputs_{CFG.num_epochs}ep", exist_ok=True)
+    os.makedirs(CFG.output_path, exist_ok=True)
     train(
         train_df,
         valid_df,
@@ -176,4 +178,5 @@ if __name__ == "__main__":
         CFG.batch_size,
         CFG.num_epochs,
         CFG.lr,
+        CFG.output_path,
     )

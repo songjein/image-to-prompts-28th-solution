@@ -29,7 +29,7 @@ if __name__ == "__main__":
             dst_file = prefix + src_file
             src_path = os.path.join("./diffusion/gustavosta_train_images", src_file)
             dst_path = os.path.join("./diffusion/gustavosta_train_images", dst_file)
-            shutil.move(src_path, dst_path)
+            shutil.copy(src_path, dst_path)
             captions.append(
                 {
                     "file_name": dst_file,
@@ -51,7 +51,7 @@ if __name__ == "__main__":
             dst_file = prefix + src_file
             src_path = os.path.join("./diffusion/gustavosta_eval_images", src_file)
             dst_path = os.path.join("./diffusion/gustavosta_eval_images", dst_file)
-            shutil.move(src_path, dst_path)
+            shutil.copy(src_path, dst_path)
             captions.append(
                 {
                     "file_name": dst_file,
@@ -71,9 +71,11 @@ if __name__ == "__main__":
     train_files = glob("./diffusion/gustavosta_train_images/*.jpg")
     eval_files = glob("./diffusion/gustavosta_eval_images/*.jpg")
 
+    # DiffusionDB split로 옮기기(train)
     for train_file in train_files:
         shutil.copy(train_file, train_file.replace("gustavosta_train_images", "train"))
 
+    # DiffusionDB split로 옮기기(validation)
     for eval_file in eval_files:
         shutil.copy(
             eval_file, eval_file.replace("gustavosta_eval_images", "validation")

@@ -3,15 +3,6 @@
 1. generate_sd2_images.py로 이미지 생성
 2. make_captions.py로 캡션(메타데이터) 생성
 3. split_dataset.py로 train/validation 스플릿(5%)
-4. convert_gustavosta_dataset.py로 gustavosta dataset 변환(train/eval)
-
-- 파일 앞에 prefix를 붙이고
-- metadata.jsonl을 생성함
-
-5. gustavosta 데이터를 train/validation 각각에 복사, metadata.jsonl은 cat
-
-- `cat gustavosta_train_images/metadata.jsonl >> train/metadata.jsonl`
-- `cat gustavosta_eval_images/metadata.jsonl >> validation/metadata.jsonl`
 
 ## chatgpt augmentation
 
@@ -36,7 +27,42 @@
   - prompt_inf.py
   - 결과: resources/\*.txt
 
-## coca training
+## 03/31 일에 dedup 로직 개발
 
-- make_cocadata.py로 train_coca.csv, valid_coca.csv 생성
-- open_clip/src/에서 ./start 실행
+- 기존의 [diffusionDB 데이터](https://www.kaggle.com/datasets/jeinsong/sd2-images-211238)에 적용 및 dedup 스크립트 포함 시켜 놓음
+  - [train/validation split](https://www.kaggle.com/datasets/jeinsong/image-to-prompt-train-valid-split-v2)에도 적용 해 놓음(metadata_dedup.jsonl)
+    - 학습 데이터 11010 건 제거 (155813 건)
+      - train/metadata_dedup.jsonl (중복제거된 메타데이터)
+    - 벨리데이션 데이터 33 건 제거 (8765 건)
+      - validation/metadata_dedup.jsonl (중복제거된 메타데이터)
+- 3/30일 까지 모았던 45126 chatgpt prompts에 dedup 적용
+  - 25707 건 (./resources/prompts_chatgpt_0330_dedup.txt)
+  - [chatgpt images ~ 3/30](https://www.kaggle.com/datasets/jeinsong/chatgpt-images-dedup-0330)
+    - [train/validation split](https://www.kaggle.com/datasets/jeinsong/chatgpt-images-dedup-0330-split)
+    - train/validation 각각을 DiffusionDB split으로 복사하고, 아래 명령어를 통해 메타데이터 통합
+      - `cat chatgpt_0330_train/metadata.jsonl >> train/metadata_dedup.jsonl`
+        - 23830 건
+      - `cat chatgpt_0330_validation/metadata.jsonl >> validation/metadata_dedup.jsonl`
+        - 1248 건
+- gustavosta 데이터 통합
+  - 데이터 [링크](https://www.kaggle.com/datasets/motono0223/gustavosta-stable-diffusion-prompts-sd2-v2)
+    - 이미 스플릿되어 공개된 데이터셋
+  - convert_gustavosta_dataset.py를 실행하여 데이터 형태 변환 및 Diffusion DB split로의 복사
+  - dedup_prompts_metadata_format.py를 통해 각 gustavosta_train_images/gustavosta_eval_images split 각각이 갖고 있는 metadata dedup
+    - `gustavosta_train_images/metadata_dedup.jsonl`
+      - 14351 건 (59367 건 제거)
+    - `gustavosta_eval_images/metadata_dedup.jsonl`
+      - 4920 건 (3272 건 제거)
+  - 메타데이터 통합
+    - `cat gustavosta_train_images/metadata_dedup.jsonl >> train/metadata_dedup.jsonl`
+    - `cat gustavosta_eval_images/metadata_dedup.jsonl >> validation/metadata_dedup.jsonl`
+- 여기까지! 통합된 세 가지 데이터를 합쳐서 [v3 데이터](https://www.kaggle.com/datasets/jeinsong/image-to-prompt-train-valid-split-v3)로 만듬
+  - 학습 데이터 193994 건
+  - 벨리데이션 데이터 14933 건
+  - 참고
+    - [v2 데이터](https://www.kaggle.com/datasets/jeinsong/image-to-prompt-train-valid-split-v2)
+      - [DiffusionDB 데이터](https://www.kaggle.com/datasets/jeinsong/sd2-images-211238) 대상으로 03/31기준 preproc_split_dataset.py 실행
+- 3/31일 open_prompts 10G(천만건) 데이터에 dedup적용(dedup_prompts.py)
+  - 232187 건 (./resources/openprompts_dedup_075.txt)
+
+4. convert_gustavosta_dataset.py로 gustavosta dataset 변환(train/eval)

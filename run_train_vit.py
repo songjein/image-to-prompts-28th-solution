@@ -8,10 +8,8 @@ import pandas as pd
 import timm
 import torch
 from scipy import spatial
-from sklearn.model_selection import train_test_split
 from timm.utils import AverageMeter
 from torch import nn
-from torch.nn.utils import clip_grad_norm_
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from tqdm import tqdm
 
@@ -128,20 +126,22 @@ def train(
 if __name__ == "__main__":
 
     class CFG:
-        model_name = (
-            "vit_large_patch14_224_clip_laion2b"  # vit_large_patch14_224_clip_laion2b
-        )
+        model_name = "vit_large_patch14_224_clip_laion2b"
         input_size = (224, 224)
         batch_size = 256
         num_epochs = 5
         lr = 1e-4
         seed = 42
 
-        output_path = "vit_large_patch14_224_clip_laion2b"
+        output_path = "vit_large_patch14_224_clip_laion2b_on_v3_wo_chatgpt"
+        metadata_file = "metadata_dedup_wo_chatgpt.jsonl"
+
+        train_dir = "./diffusion/train"
+        valid_dir = "./diffusion/validation"
 
     seed_everything(CFG.seed)
 
-    with open("./diffusion/train/metadata_dedup.jsonl") as f:
+    with open(os.path.join(CFG.train_dir, CFG.metadata_file)) as f:
         train_data = {
             "filepath": [],
             "prompt": [],
@@ -149,13 +149,13 @@ if __name__ == "__main__":
         for line in f:
             item = json.loads(line)
             train_data["filepath"].append(
-                os.path.join("./diffusion/train/", item["file_name"])
+                os.path.join(CFG.train_dir, item["file_name"])
             )
             train_data["prompt"].append(item["text"])
 
         train_df = pd.DataFrame.from_dict(train_data)
 
-    with open("./diffusion/validation/metadata_dedup.jsonl") as f:
+    with open(os.path.join(CFG.valid_dir, CFG.metadata_file)) as f:
         validation_data = {
             "filepath": [],
             "prompt": [],
@@ -163,7 +163,7 @@ if __name__ == "__main__":
         for line in f:
             item = json.loads(line)
             validation_data["filepath"].append(
-                os.path.join("./diffusion/validation/", item["file_name"])
+                os.path.join(CFG.valid_dir, item["file_name"])
             )
             validation_data["prompt"].append(item["text"])
 

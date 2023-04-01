@@ -40,16 +40,56 @@ def cosine_similarity(y_trues, y_preds):
 
 
 def train(
-    train_df, valid_df, model_name, input_size, batch_size, num_epochs, lr, output_path
+    train_df,
+    valid_df,
+    model_name,
+    input_size,
+    batch_size,
+    num_epochs,
+    lr,
+    lr_scaling_factor,
+    use_dropout,
+    output_path,
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dataloaders = get_dataloaders(train_df, valid_df, input_size, batch_size)
 
     model = timm.create_model(model_name, pretrained=True, num_classes=384)
+    if use_dropout:
+        model.haed = torch.nn.Sequential(
+            torch.nn.Dropout(p=0.2),
+            torch.nn.Linear(model.head.in_features, 384),
+        )
     model.set_grad_checkpointing()
     model.to(device)
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+    if lr_scaling_factor is not None:
+        lr_dict = dict()
+        for name, _ in model.named_parameters():
+            if "head" in name:
+                lr_dict["head"] = lr
+            else:
+                lr_dict["backbone"] = lr * lr_scaling_factor
+
+        optimizer_params = [
+            {
+                "params": [
+                    param for name, param in model.named_parameters() if "head" in name
+                ],
+                "lr": lr_dict["head"],
+            },
+            {
+                "params": [
+                    param
+                    for name, param in model.named_parameters()
+                    if "head" not in name
+                ],
+                "lr": lr_dict["backbone"],
+            },
+        ]
+        optimizer = torch.optim.AdamW(optimizer_params)
+    else:
+        optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
 
     ttl_iters = num_epochs * len(dataloaders["train"])
     scheduler = CosineAnnealingLR(optimizer, T_max=ttl_iters, eta_min=1e-6)
@@ -133,8 +173,10 @@ if __name__ == "__main__":
         num_epochs = 5
         lr = 1e-4
         seed = 42
+        lr_scaling_factor = 0.001  # or None
+        use_dropout = True
 
-        output_path = "vit_large_patch14_224_clip_laion2b_on_v3_wo_chatgpt"
+        output_path = "vit_large_patch14_224_clip_laion2b_on_v3_wo_chatgpt_v2"
         metadata_file = "metadata_dedup_wo_chatgpt.jsonl"
 
         train_dir = "./diffusion/train"
@@ -181,5 +223,7 @@ if __name__ == "__main__":
         CFG.batch_size,
         CFG.num_epochs,
         CFG.lr,
+        CFG.lr_scaling_factor,
+        CFG.use_dropout,
         CFG.output_path,
     )

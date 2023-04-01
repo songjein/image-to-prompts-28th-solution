@@ -68,5 +68,3 @@
   - 232187 건 (./resources/openprompts_dedup_075.txt)
   - filter_before_generate_image.py 적용하여 전처리를 미리 적용해 본 후 필터링
     - 192744 건 (./resources/openprompts_dedup_075_filtered.txt)
-
-4. convert_gustavosta_dataset.py로 gustavosta dataset 변환(train/eval)

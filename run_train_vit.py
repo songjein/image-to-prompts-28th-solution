@@ -91,8 +91,7 @@ def train(
     else:
         optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
 
-    ttl_iters = num_epochs * len(dataloaders["train"])
-    scheduler = CosineAnnealingLR(optimizer, T_max=ttl_iters, eta_min=1e-6)
+    scheduler = CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=1e-6)
     criterion = nn.CosineEmbeddingLoss()
 
     best_score = -1.0
@@ -114,7 +113,6 @@ def train(
             loss.backward()
 
             optimizer.step()
-            scheduler.step()
 
             trn_loss = loss.item()
             trn_cos = cosine_similarity(
@@ -123,6 +121,8 @@ def train(
 
             train_meters["loss"].update(trn_loss, n=X.size(0))
             train_meters["cos"].update(trn_cos, n=X.size(0))
+
+        scheduler.step()
 
         print(
             "Epoch {:d} / trn/loss={:.4f}, trn/cos={:.4f}".format(
@@ -173,10 +173,12 @@ if __name__ == "__main__":
         num_epochs = 5
         lr = 1e-4
         seed = 42
-        lr_scaling_factor = 0.001  # or None
-        use_dropout = True
+        lr_scaling_factor = None  # 0.001  # or None
+        use_dropout = False
 
-        output_path = "vit_large_patch14_224_clip_laion2b_on_v3_wo_chatgpt_v2"
+        output_path = (
+            "vit_large_patch14_224_clip_laion2b_on_v3_wo_chatgpt_v2_fix_sche_bug"
+        )
         metadata_file = "metadata_dedup_wo_chatgpt.jsonl"
 
         train_dir = "./diffusion/train"

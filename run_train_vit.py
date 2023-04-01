@@ -1,6 +1,7 @@
 import json
 import os
 import random
+import shutil
 import warnings
 
 import numpy as np
@@ -141,6 +142,9 @@ if __name__ == "__main__":
 
     seed_everything(CFG.seed)
 
+    os.makedirs(CFG.output_path, exist_ok=True)
+    shutil.copy("./run_train_vit.py", os.path.join(CFG.output_path, "run_train_vit.py"))
+
     with open(os.path.join(CFG.train_dir, CFG.metadata_file)) as f:
         train_data = {
             "filepath": [],
@@ -169,7 +173,6 @@ if __name__ == "__main__":
 
         valid_df = pd.DataFrame.from_dict(validation_data)
 
-    os.makedirs(CFG.output_path, exist_ok=True)
     train(
         train_df,
         valid_df,

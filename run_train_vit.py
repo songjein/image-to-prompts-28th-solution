@@ -48,18 +48,22 @@ def train(
     num_epochs,
     lr,
     lr_scaling_factor,
-    use_dropout,
+    dropout_rate,
     output_path,
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dataloaders = get_dataloaders(train_df, valid_df, input_size, batch_size)
 
     model = timm.create_model(model_name, pretrained=True, num_classes=384)
-    if use_dropout:
+    if dropout_rate > 0.0:
         model.haed = torch.nn.Sequential(
-            torch.nn.Dropout(p=0.2),
+            torch.nn.Dropout(p=dropout_rate),
+            torch.nn.Linear(model.head.in_features, model.head.in_features),
             torch.nn.Linear(model.head.in_features, 384),
         )
+
+    fp_log = open(os.path.join(output_path, "logs.txt"))
+
     model.set_grad_checkpointing()
     model.to(device)
 
@@ -124,11 +128,11 @@ def train(
 
         scheduler.step()
 
-        print(
-            "Epoch {:d} / trn/loss={:.4f}, trn/cos={:.4f}".format(
-                epoch + 1, train_meters["loss"].avg, train_meters["cos"].avg
-            )
+        log = "Epoch {:d} / trn/loss={:.4f}, trn/cos={:.4f}".format(
+            epoch + 1, train_meters["loss"].avg, train_meters["cos"].avg
         )
+        print(log)
+        fp_log.write(log + "\n")
 
         val_meters = {
             "loss": AverageMeter(),
@@ -151,11 +155,11 @@ def train(
             val_meters["loss"].update(val_loss, n=X.size(0))
             val_meters["cos"].update(val_cos, n=X.size(0))
 
-        print(
-            "Epoch {:d} / val/loss={:.4f}, val/cos={:.4f}".format(
-                epoch + 1, val_meters["loss"].avg, val_meters["cos"].avg
-            )
+        log = "Epoch {:d} / val/loss={:.4f}, val/cos={:.4f}".format(
+            epoch + 1, val_meters["loss"].avg, val_meters["cos"].avg
         )
+        print(log)
+        fp_log.write(log + "\n")
 
         if val_meters["cos"].avg > best_score:
             best_score = val_meters["cos"].avg
@@ -167,18 +171,16 @@ def train(
 if __name__ == "__main__":
 
     class CFG:
-        model_name = "vit_large_patch14_224_clip_laion2b"
+        model_name = "vit_huge_patch14_224_clip_laion2b"
         input_size = (224, 224)
         batch_size = 256
-        num_epochs = 5
+        num_epochs = 3
         lr = 1e-4
         seed = 42
-        lr_scaling_factor = None  # 0.001  # or None
-        use_dropout = False
+        lr_scaling_factor = None  # 0.1  # 0.001  # or None
+        dropout_rate = 0.1
 
-        output_path = (
-            "vit_large_patch14_224_clip_laion2b_on_v3_wo_chatgpt_v2_fix_sche_bug"
-        )
+        output_path = "vit_huge_patch14_224_clip_laion2b_on_v3_wo_chatgpt_2fc_dropout01"
         metadata_file = "metadata_dedup_wo_chatgpt.jsonl"
 
         train_dir = "./diffusion/train"
@@ -188,6 +190,11 @@ if __name__ == "__main__":
 
     os.makedirs(CFG.output_path, exist_ok=True)
     shutil.copy("./run_train_vit.py", os.path.join(CFG.output_path, "run_train_vit.py"))
+    shutil.copy("./dataset.py", os.path.join(CFG.output_path, "dataset.py"))
+    with open(
+        os.path.join(CFG.output_path, "train_conf.json"), "w", encoding="utf-8"
+    ) as f:
+        f.write(json.dumps(vars(CFG)))
 
     with open(os.path.join(CFG.train_dir, CFG.metadata_file)) as f:
         train_data = {
@@ -226,6 +233,6 @@ if __name__ == "__main__":
         CFG.num_epochs,
         CFG.lr,
         CFG.lr_scaling_factor,
-        CFG.use_dropout,
+        CFG.dropout_rate,
         CFG.output_path,
     )

@@ -8,23 +8,26 @@ IMAGENET_MEAN_RGB = [0.485, 0.456, 0.406]
 IMAGENET_STD_RGB = [0.229, 0.224, 0.225]
 
 
-def get_transformation_for_train() -> A.Compose:
+def get_transformation_for_train(image_size) -> A.Compose:
     """이미지 augmentation 로직을 만들어주는 함수입니다.
     이미지의 내용을 해치지 않는 선에서 밝기, 대조, 블러, 회전 등에 대한 augmentation 을 수행합니다.
     :return: 이미지 변환을 수행해주는 Compose class
     """
     transform = A.Compose(
         [
-            A.OneOf(
-                [
-                    A.MotionBlur(blur_limit=3),
-                    A.MedianBlur(blur_limit=3),
-                    A.GaussianBlur(blur_limit=(3, 5), sigma_limit=0.5),
-                ],
+            A.HorizontalFlip(p=0.5),
+            A.ImageCompression(quality_lower=99, quality_upper=100),
+            A.RandomBrightnessContrast(brightness_limit=0.1, contrast_limit=0.1, p=0.5),
+            A.ShiftScaleRotate(
+                shift_limit=0.1, scale_limit=0.2, rorate_limit=10, border_mode=0, p=0.5
+            ),
+            A.Resize(image_size, image_size),
+            A.Cutout(
+                max_h_size=int(image_size * 0.1),
+                max_w_size=int(image_size * 0.1),
+                num_holes=1,
                 p=0.5,
             ),
-            A.VerticalFlip(p=0.5),
-            A.HorizontalFlip(p=0.5),
         ]
     )
     return transform
@@ -73,8 +76,10 @@ class DiffusionCollator:
         return images, prompt_embeddings
 
 
-def get_dataloaders(trn_df, val_df, image_size, batch_size):
-    train_transform = get_transformation_for_train()
+def get_dataloaders(trn_df, val_df, image_size, batch_size, use_aug):
+    train_transform = None
+    if use_aug:
+        train_transform = get_transformation_for_train(image_size)
     trn_dataset = DiffusionDataset(trn_df, train_transform, image_size)
     val_dataset = DiffusionDataset(val_df, None, image_size)
     collator = DiffusionCollator()
@@ -85,7 +90,7 @@ def get_dataloaders(trn_df, val_df, image_size, batch_size):
         shuffle=True,
         batch_size=batch_size,
         pin_memory=True,
-        num_workers=2,
+        num_workers=4,
         drop_last=True,
         collate_fn=collator,
     )
@@ -94,7 +99,7 @@ def get_dataloaders(trn_df, val_df, image_size, batch_size):
         shuffle=False,
         batch_size=batch_size,
         pin_memory=True,
-        num_workers=2,
+        num_workers=4,
         drop_last=False,
         collate_fn=collator,
     )

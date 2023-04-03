@@ -3,6 +3,7 @@ import os
 import random
 import shutil
 import warnings
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -13,6 +14,7 @@ from timm.utils import AverageMeter
 from torch import nn
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from tqdm import tqdm
+from transformers import get_cosine_schedule_with_warmup
 
 from dataset import get_dataloaders
 
@@ -50,9 +52,12 @@ def train(
     lr_scaling_factor,
     dropout_rate,
     output_path,
+    scheduler,
+    warmup_steps,
+    use_aug,
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    dataloaders = get_dataloaders(train_df, valid_df, input_size, batch_size)
+    dataloaders = get_dataloaders(train_df, valid_df, input_size, batch_size, use_aug)
 
     model = timm.create_model(model_name, pretrained=True, num_classes=384)
     if dropout_rate > 0.0:
@@ -62,7 +67,7 @@ def train(
             torch.nn.Linear(model.head.in_features, 384),
         )
 
-    fp_log = open(os.path.join(output_path, "logs.txt"))
+    fp_log = open(os.path.join(output_path, "logs.txt"), "w", encoding="utf-8")
 
     model.set_grad_checkpointing()
     model.to(device)
@@ -95,7 +100,21 @@ def train(
     else:
         optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
 
-    scheduler = CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=1e-6)
+    if scheduler == "CosineAnnealingLR":
+        scheduler = CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=1e-6)
+        print("set cosine annealing lr scheduler")
+        fp_log.write("set cosine annealing lr scheduler\n")
+    elif scheduler == "CosineSchedulerWithWarmup":
+        steps_per_epoch = len(dataloaders["train"])
+        num_training_steps = num_epochs * steps_per_epoch
+        scheduler = get_cosine_schedule_with_warmup(
+            optimizer,
+            num_training_steps=num_training_steps,
+            num_warmup_steps=warmup_steps,
+        )
+        print("set cosine scheduler with warmup lr scheduler")
+        fp_log.write("set cosine scheduler with warmup lr scheduler\n")
+
     criterion = nn.CosineEmbeddingLoss()
 
     best_score = -1.0
@@ -171,20 +190,25 @@ def train(
 if __name__ == "__main__":
 
     class CFG:
-        model_name = "vit_huge_patch14_224_clip_laion2b"
+        model_name = "vit_large_patch14_224_clip_laion2b"
         input_size = (224, 224)
         batch_size = 256
-        num_epochs = 3
+        num_epochs = 4
         lr = 1e-4
         seed = 42
-        lr_scaling_factor = None  # 0.1  # 0.001  # or None
+        lr_scaling_factor: Optional[float] = None
         dropout_rate = 0.1
+        scheduler = "CosineAnnealingLR"
+        warmup_steps = 100
+        use_aug = True
 
-        output_path = "vit_huge_patch14_224_clip_laion2b_on_v3_wo_chatgpt_2fc_dropout01"
+        output_path = f"{model_name}_on_v3_wo_chatgpt_2fc_dropout01_aug"
         metadata_file = "metadata_dedup_wo_chatgpt.jsonl"
 
         train_dir = "./diffusion/train"
         valid_dir = "./diffusion/validation"
+
+    assert CFG.scheduler in ["CosineSchedulerWithWarmup", "CosineAnnealingLR"]
 
     seed_everything(CFG.seed)
 
@@ -194,7 +218,7 @@ if __name__ == "__main__":
     with open(
         os.path.join(CFG.output_path, "train_conf.json"), "w", encoding="utf-8"
     ) as f:
-        f.write(json.dumps(vars(CFG)))
+        f.write(json.dumps(vars(CFG())))
 
     with open(os.path.join(CFG.train_dir, CFG.metadata_file)) as f:
         train_data = {
@@ -235,4 +259,7 @@ if __name__ == "__main__":
         CFG.lr_scaling_factor,
         CFG.dropout_rate,
         CFG.output_path,
+        CFG.scheduler,
+        CFG.warmup_steps,
+        CFG.use_aug,
     )

@@ -193,7 +193,7 @@ if __name__ == "__main__":
         model_name = "vit_large_patch14_224_clip_laion2b"
         input_size = (224, 224)
         batch_size = 256
-        num_epochs = 4
+        num_epochs = 5
         lr = 1e-4
         seed = 42
         lr_scaling_factor: Optional[float] = None
@@ -202,11 +202,12 @@ if __name__ == "__main__":
         warmup_steps = 100
         use_aug = True
 
-        output_path = f"{model_name}_on_v3_wo_chatgpt_2fc_dropout01_aug"
-        metadata_file = "metadata_dedup_wo_chatgpt.jsonl"
+        output_path = f"{model_name}_on_v4_2fc_dropout01_aug"
+        train_metadata_file = "metadata_concat.jsonl"
+        valid_metadata_file = "metadata_concat_split_dedup.jsonl"
 
-        train_dir = "./diffusion/train"
-        valid_dir = "./diffusion/validation"
+        train_dir = "./diffusion/image-to-prompt-train-valid-split-v4/train"
+        valid_dir = "./diffusion/image-to-prompt-train-valid-split-v4/validation"
 
     assert CFG.scheduler in ["CosineSchedulerWithWarmup", "CosineAnnealingLR"]
 
@@ -220,7 +221,7 @@ if __name__ == "__main__":
     ) as f:
         f.write(json.dumps(vars(CFG())))
 
-    with open(os.path.join(CFG.train_dir, CFG.metadata_file)) as f:
+    with open(os.path.join(CFG.train_dir, CFG.train_metadata_file)) as f:
         train_data = {
             "filepath": [],
             "prompt": [],
@@ -234,7 +235,7 @@ if __name__ == "__main__":
 
         train_df = pd.DataFrame.from_dict(train_data)
 
-    with open(os.path.join(CFG.valid_dir, CFG.metadata_file)) as f:
+    with open(os.path.join(CFG.valid_dir, CFG.valid_metadata_file)) as f:
         validation_data = {
             "filepath": [],
             "prompt": [],

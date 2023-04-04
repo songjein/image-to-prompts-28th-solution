@@ -100,4 +100,7 @@
       - validation/metadata_concat_split_dedup.jsonl
   - 4/4일 170k dedup 합친 버전 (jeinsong/image-to-prompt-train-valid-split-v4-a)
     - 총 286698 건 (학습셋만 업데이트)
-      - make_captions > dedup_prompts_metadata_format(cross split) > image-to-prompt-train-valid-split-v4/filter 실행
+      - make_captions > dedup_prompts_metadata_format(cross split) > image-to-prompt-train-valid-split-v4/prepare 실행
+    - *추가 데이터에 대해 preproc이 적용 안된 문제 발견* > image-to-prompt-train-valid-split-v4/filter_by_preprocy.py 반복 실행 > v4-b로 재배포
+      - train 286670 건 (train/metadata_concat.jsonl)
+      - validation 13324 건 (validation/metadata_concat_split_dedup.jsonl)

@@ -92,8 +92,12 @@
   - https://www.kaggle.com/datasets/xiaozhouwang/sd2gpt2
   - (optional) https://www.kaggle.com/datasets/jeinsong/chatgpt-images-dedup-0330-split
 - v4 데이터 생성 결과
-  - train 237768 건 (v2 + openprompts 12k dedup)
-    - train/metadata_concat.jsonl
-  - validation 23116 건 (v2 + gustavosta train/eval)
-    - 이후에 dedup_prompts_metadata_format.py 실행 통해 split dedup (3901 건 제거)
-    - validation/metadata_concat_split_dedup.jsonl
+  - 4/3일
+    - train 237768 건 (v2 + openprompts 120k dedup)
+      - train/metadata_concat.jsonl
+    - validation 23116 건 (v2 + gustavosta train/eval)
+      - 이후에 dedup_prompts_metadata_format.py 실행 통해 split dedup (3901 건 제거)
+      - validation/metadata_concat_split_dedup.jsonl
+  - 4/4일 170k dedup 합친 버전 (jeinsong/image-to-prompt-train-valid-split-v4-a)
+    - 총 286698 건 (학습셋만 업데이트)
+      - make_captions > dedup_prompts_metadata_format(cross split) > image-to-prompt-train-valid-split-v4/filter 실행

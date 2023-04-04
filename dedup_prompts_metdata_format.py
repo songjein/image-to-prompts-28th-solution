@@ -9,8 +9,8 @@ if __name__ == "__main__":
     chunk_size = 1000
 
     if not cross_split_dedup:
-        input_path = "./diffusion/train/metadata_dedup_wo_chatgpt.jsonl"
-        output_path = "test.jsonl"
+        input_path = "./diffusion/image-to-prompt-train-valid-split-v4/validation/metadata_concat.jsonl"
+        output_path = "./diffusion/image-to-prompt-train-valid-split-v4/validation/metadata_concat_dedup.jsonl"
 
         st_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2").cuda()
         cosim = torch.nn.CosineSimilarity(dim=1, eps=1e-7)
@@ -60,8 +60,9 @@ if __name__ == "__main__":
 
     else:
         # train 기준 valid 의 dup을 제거
-        train_input_path = "./diffusion/train/metadata_dedup_wo_chatgpt.jsonl"
-        valid_input_path = "./diffusion/validation/metadata_dedup_wo_chatgpt.jsonl"
+        # 꼭 train/valid 간의 처리가 아니더라도 가능(metadata format만 맞다면)
+        train_input_path = "./diffusion/image-to-prompt-train-valid-split-v4/train/metadata_concat.jsonl"
+        valid_input_path = "./diffusion/image-to-prompt-train-valid-split-v4/validation/metadata_concat.jsonl"
         file_name = valid_input_path.split("/")[-1]
         output_path = valid_input_path.replace(
             file_name, file_name.split(".")[0] + "_split_dedup.jsonl"

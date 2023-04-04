@@ -68,3 +68,32 @@
   - 232187 건 (./resources/openprompts_dedup_075.txt)
   - filter_before_generate_image.py 적용하여 전처리를 미리 적용해 본 후 필터링
     - 192744 건 (./resources/openprompts_dedup_075_filtered.txt)
+
+## 04/03 v4 데이터 구성
+
+- 앞서 v2에 dedup해 놓은 [train/validation split](https://www.kaggle.com/datasets/jeinsong/image-to-prompt-train-valid-split-v2)을 활용
+  - 학습 데이터 11010 건 제거 (155813 건)
+    - train/metadata_dedup.jsonl (중복제거된 메타데이터)
+  - 벨리데이션 데이터 33 건 제거 (8765 건)
+    - validation/metadata_dedup.jsonl (중복제거된 메타데이터)
+- 중간에 확인해보니 open_prompts 데이터가 train과 많이 겹치고 있었음...
+  - 현재까지 처리된 12만 개는 제외하고, 12만개 이후에선 중복 제거(22643개)하여 이어서 돌림
+  - resources/openprompts_dedup_075_filtered_cross_dedup.txt
+    - 앞으로도 데이터 합친 이후엔 반드시 dedup 적용(self)
+- v4에선 gustavosta 데이터를 validation에서만 활용할 예정
+  - v2 validation + gustavosta data(train + valid)
+- v4에선 아래 데이터셋을 추가
+  - openprompts 12만 건에서, 중복 제거하고 추가
+    - make_captions로 메타데이터 부터 만들고 학습데이터와 중복인 부분 제거
+    - [필터링 된 데이터](https://www.kaggle.com/datasets/jeinsong/openprompts-images-120k-dedup)
+      - metadata_dedup.jsonl (81955 건)
+- v5에선 아래 데이터셋을 추가 고려
+  - https://www.kaggle.com/datasets/xiaozhouwang/sd2hardcode
+  - https://www.kaggle.com/datasets/xiaozhouwang/sd2gpt2
+  - (optional) https://www.kaggle.com/datasets/jeinsong/chatgpt-images-dedup-0330-split
+- v4 데이터 생성 결과
+  - train 237768 건 (v2 + openprompts 12k dedup)
+    - train/metadata_concat.jsonl
+  - validation 23116 건 (v2 + gustavosta train/eval)
+    - 이후에 dedup_prompts_metadata_format.py 실행 통해 split dedup (3901 건 제거)
+    - validation/metadata_concat_split_dedup.jsonl

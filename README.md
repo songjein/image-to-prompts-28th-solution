@@ -87,10 +87,6 @@
     - make_captions로 메타데이터 부터 만들고 학습데이터와 중복인 부분 제거
     - [필터링 된 데이터](https://www.kaggle.com/datasets/jeinsong/openprompts-images-120k-dedup)
       - metadata_dedup.jsonl (81955 건)
-- v5에선 아래 데이터셋을 추가 고려
-  - https://www.kaggle.com/datasets/xiaozhouwang/sd2hardcode
-  - https://www.kaggle.com/datasets/xiaozhouwang/sd2gpt2
-  - (optional) https://www.kaggle.com/datasets/jeinsong/chatgpt-images-dedup-0330-split
 - v4 데이터 생성 결과
   - 4/3일
     - train 237768 건 (v2 + openprompts 120k dedup)
@@ -104,3 +100,16 @@
     - _추가 데이터에 대해 preproc이 적용 안된 문제 발견_ > image-to-prompt-train-valid-split-v4/filter_by_preprocy.py 반복 실행 > v4-b로 재배포
       - train 286670 건 (train/metadata_concat.jsonl)
       - validation 13324 건 (validation/metadata_concat_split_dedup.jsonl)
+- v5 데이터
+  - ddb 데이터 다시 정제(전처리에서 스탑워드 필터링 일괄 제거)
+    - [168916건 데이터 확보](https://www.kaggle.com/datasets/jeinsong/ddb-sd2-168916)
+      - jeinsong/sd2-images-211238를 재가공
+  - openprompts 데이터 다시 정제
+    - 168212 건
+  - 중복 제거
+    - dedup_prompts_metadata_format.py 한 번 해주기 > train/metadata_concat_dedup.jsonl (82982 제거되어 254146개) > train/metadata.jsonl로 이름 변경
+    - validation은 v4-b 가져와서 필터 0개 될 때 까지, filter_by_preproc.py 실행 후 8802 개 남음 (gustavosta 아닌 것 제거 하고, 전처리 필터링 적용) > validation/metadata.jsonl로 이름 변경
+  - v6 or v5+ 에선 아래 데이터셋을 추가 고려
+    - https://www.kaggle.com/datasets/xiaozhouwang/sd2hardcode
+    - https://www.kaggle.com/datasets/xiaozhouwang/sd2gpt2
+    - (optional) https://www.kaggle.com/datasets/jeinsong/chatgpt-images-dedup-0330-split

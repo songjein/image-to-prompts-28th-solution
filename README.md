@@ -1,8 +1,8 @@
 ## dataset 만드는 방법
 
 1. generate_sd2_images.py로 이미지 생성
-2. make_captions.py로 캡션(메타데이터) 생성
-3. split_dataset.py로 train/validation 스플릿(5%)
+2. make_captions_with_preproc.py로 캡션(메타데이터) 생성 및 전처리
+3. (optional) split_dataset.py로 train/validation 스플릿(5%)
 
 ## chatgpt augmentation
 
@@ -29,7 +29,7 @@
   - prompt_inf.py
   - 결과: resources/\*.txt
 
-## 03/31 일에 dedup 로직 개발
+## v3 데이터 구성 (03/31)
 
 - 기존의 [diffusionDB 데이터](https://www.kaggle.com/datasets/jeinsong/sd2-images-211238)에 적용 및 dedup 스크립트 포함 시켜 놓음
   - [train/validation split](https://www.kaggle.com/datasets/jeinsong/image-to-prompt-train-valid-split-v2)에도 적용 해 놓음(metadata_dedup.jsonl)
@@ -69,7 +69,7 @@
   - filter_before_generate_image.py 적용하여 전처리를 미리 적용해 본 후 필터링
     - 192744 건 (./resources/openprompts_dedup_075_filtered.txt)
 
-## 04/03 v4 데이터 구성
+## v4 데이터 구성 (04/03)
 
 - 앞서 v2에 dedup해 놓은 [train/validation split](https://www.kaggle.com/datasets/jeinsong/image-to-prompt-train-valid-split-v2)을 활용
   - 학습 데이터 11010 건 제거 (155813 건)
@@ -100,16 +100,18 @@
     - _추가 데이터에 대해 preproc이 적용 안된 문제 발견_ > image-to-prompt-train-valid-split-v4/filter_by_preprocy.py 반복 실행 > v4-b로 재배포
       - train 286670 건 (train/metadata_concat.jsonl)
       - validation 13324 건 (validation/metadata_concat_split_dedup.jsonl)
-- v5 데이터
-  - ddb 데이터 다시 정제(전처리에서 스탑워드 필터링 일괄 제거)
-    - [168916건 데이터 확보](https://www.kaggle.com/datasets/jeinsong/ddb-sd2-168916)
-      - jeinsong/sd2-images-211238를 재가공
-  - openprompts 데이터 다시 정제
-    - 168212 건
-  - 중복 제거
-    - dedup_prompts_metadata_format.py 한 번 해주기 > train/metadata_concat_dedup.jsonl (82982 제거되어 254146개) > train/metadata.jsonl로 이름 변경
-    - validation은 v4-b 가져와서 필터 0개 될 때 까지, filter_by_preproc.py 실행 후 8802 개 남음 (gustavosta 아닌 것 제거 하고, 전처리 필터링 적용) > validation/metadata.jsonl로 이름 변경
-  - v6 or v5+ 에선 아래 데이터셋을 추가 고려
-    - https://www.kaggle.com/datasets/xiaozhouwang/sd2hardcode
-    - https://www.kaggle.com/datasets/xiaozhouwang/sd2gpt2
-    - (optional) https://www.kaggle.com/datasets/jeinsong/chatgpt-images-dedup-0330-split
+
+## v5 데이터 데이터 구성 (04/04)
+
+- ddb 데이터 다시 정제(전처리에서 스탑워드 필터링 일괄 제거)
+  - [168916건 데이터 확보](https://www.kaggle.com/datasets/jeinsong/ddb-sd2-168916)
+    - jeinsong/sd2-images-211238를 재가공
+- openprompts 데이터 다시 정제
+  - 168212 건
+- 중복 제거
+  - dedup_prompts_metadata_format.py 한 번 해주기 > train/metadata_concat_dedup.jsonl (82982 제거되어 254146개) > train/metadata.jsonl로 이름 변경
+  - validation은 v4-b 가져와서 필터 0개 될 때 까지, filter_by_preproc.py 실행 후 8802 개 남음 (gustavosta 아닌 것 제거 하고, 전처리 필터링 적용) > validation/metadata.jsonl로 이름 변경
+- v6 or v5+ 에선 아래 데이터셋을 추가 고려
+  - https://www.kaggle.com/datasets/xiaozhouwang/sd2hardcode
+  - https://www.kaggle.com/datasets/xiaozhouwang/sd2gpt2
+  - (optional) https://www.kaggle.com/datasets/jeinsong/chatgpt-images-dedup-0330-split

@@ -1,8 +1,6 @@
 import json
 import os
-import random
 import re
-import shutil
 from typing import Optional
 
 from langdetect import detect
@@ -17,37 +15,7 @@ def preprocess(text: str) -> Optional[str]:
     if "http" in concat_text:
         return None
 
-    if "fps" in concat_text:
-        return None
-
-    stopwords = [
-        "opengl",
-        "sec shutter",
-        "second shutter",
-        "shutter speed",
-        "1/60",
-        "1/160",
-        "1/1000",
-        "1/2000",
-        "cannon",
-        "nikon",
-        "canon",
-        "kodak",
-        "portra",
-        " eos",
-        "leica summilux",
-        "focal length",
-        "degrees angle",
-        "exposure time",
-        "flash on",
-        "DOF",
-        "dof:",
-        "blur:",
-        "fzr",
-    ]
-    for stopword in stopwords:
-        if stopword in text.lower():
-            return None
+    # NOTE: 기존에 있던 스탑워드 필터링 제거함 > 추후에 필요하다면 replace로 대체
 
     # [1] 전처리
     # 숫자 사이의 빈칸 제거
@@ -176,89 +144,47 @@ def preprocess(text: str) -> Optional[str]:
     if re.search(patterns, text, re.IGNORECASE):
         return None
 
-    try:
-        if detect(text) != "en":
-            return None
-    except:
-        print("exception at", orig_text)
-        return None
-
     return text
 
 
 if __name__ == "__main__":
-    root = "./diffusion/chatgpt-images/"
-    copy_file = False
-    make_meta = False
+    prefix = "openprompts_"
+    input_path = "./resources/openprompts_dedup_075_filtered_cross_dedup.txt"
+    output_path = "./diffusion/openprompts_images/metadata.jsonl"  # 기존엔 168166
+    image_dir_path = "./diffusion/openprompts_images"
+
+    skip_cnt = 0
 
     captions = []
-    with open("./diffusion/chatgpt_0330_captions.jsonl") as f:
-        for line in f:
-            captions.append(json.loads(line))
+    with open(input_path) as f:
+        for idx, line in enumerate(tqdm(f)):
+            file_name = f"{prefix}{idx:08d}.jpg"
+            path = os.path.join(image_dir_path, file_name)
+            if not os.path.exists(path):
+                continue
+            prompt = line.strip()
 
-    random.seed(42)
-    random.shuffle(captions)
+            try:
+                if detect(prompt) != "en":
+                    skip_cnt += 1
+                    continue
+            except:
+                print("exception at", prompt)
 
-    train_captions = captions[: int(len(captions) * 0.95)]
-    valid_captions = captions[int(len(captions) * 0.95) :]
+            text = preprocess(prompt)
+            if text is None:
+                skip_cnt += 1
+                continue
 
-    train_dir = "./diffusion/chatgpt_0330_train/"
-    valid_dir = "./diffusion/chatgpt_0330_validation/"
-    os.makedirs(train_dir, exist_ok=True)
-    os.makedirs(valid_dir, exist_ok=True)
+            captions.append(
+                {
+                    "file_name": file_name,
+                    "text": text,
+                }
+            )
 
-    visited = set()
-    train_lens = []
-    _train_captions = []
-    for caption in tqdm(train_captions):
-        text = preprocess(caption["text"])
-        if text is None:
-            continue
-        caption["text"] = text
-        visited.add(caption["text"].strip())
-        train_lens.append(len(caption["text"].strip()))
-        _from = os.path.join(root, caption["file_name"])
-        _to = os.path.join(train_dir, caption["file_name"])
-        if copy_file:
-            shutil.copy(_from, _to)
-        _train_captions.append(caption)
+    with open(output_path, "w", encoding="utf-8") as f:
+        for caption in captions:
+            f.write(json.dumps(caption, ensure_ascii=False) + "\n")
 
-    train_captions = _train_captions
-
-    dup_cnt = 0
-    valid_lens = []
-    _valid_captions = []
-    for caption in tqdm(valid_captions):
-        text = preprocess(caption["text"])
-        if text is None:
-            continue
-        caption["text"] = text
-        if caption["text"] in visited:
-            print(caption)
-            dup_cnt += 1
-            continue
-        valid_lens.append(len(caption["text"].strip()))
-        _from = os.path.join(root, caption["file_name"])
-        _to = os.path.join(valid_dir, caption["file_name"])
-        if copy_file:
-            shutil.copy(_from, _to)
-        _valid_captions.append(caption)
-
-    valid_captions = _valid_captions
-
-    print(dup_cnt)
-    print("train_lens", sum(train_lens) / len(train_lens))
-    print("valid_lens", sum(valid_lens) / len(valid_lens))
-    print("num train samples", len(train_lens))
-    print("num valid samples", len(valid_lens))
-
-    if make_meta:
-        with open(os.path.join(train_dir, "metadata.jsonl"), "w") as f:
-            for caption in train_captions:
-                caption["file_name"] = caption["file_name"]
-                f.write(json.dumps(caption, ensure_ascii=False) + "\n")
-
-        with open(os.path.join(valid_dir, "metadata.jsonl"), "w") as f:
-            for caption in valid_captions:
-                caption["file_name"] = caption["file_name"]
-                f.write(json.dumps(caption, ensure_ascii=False) + "\n")
+    print(f"skip_count: {skip_cnt}")

@@ -64,6 +64,7 @@ def train(
         model.haed = torch.nn.Sequential(
             torch.nn.Dropout(p=dropout_rate),
             torch.nn.Linear(model.head.in_features, model.head.in_features),
+            torch.nn.ReLU(),
             torch.nn.Linear(model.head.in_features, 384),
         )
 
@@ -190,7 +191,7 @@ def train(
 if __name__ == "__main__":
 
     class CFG:
-        model_name = "vit_large_patch14_224_clip_laion2b"
+        model_name = "vit_large_patch14_clip_224.openai_ft_in12k_in1k"
         input_size = (224, 224)
         batch_size = 256
         num_epochs = 5
@@ -199,15 +200,15 @@ if __name__ == "__main__":
         lr_scaling_factor: Optional[float] = None
         dropout_rate = 0.1
         scheduler = "CosineAnnealingLR"
-        warmup_steps = 100
+        warmup_steps = 200
         use_aug = True
 
-        output_path = f"{model_name}_on_v4_2fc_dropout01_aug"
-        train_metadata_file = "metadata_concat.jsonl"
-        valid_metadata_file = "metadata_concat_split_dedup.jsonl"
+        output_path = f"{model_name}_on_v5_aug_do01_2fc"
+        train_metadata_file = "metadata.jsonl"
+        valid_metadata_file = "metadata.jsonl"
 
-        train_dir = "./diffusion/image-to-prompt-train-valid-split-v4/train"
-        valid_dir = "./diffusion/image-to-prompt-train-valid-split-v4/validation"
+        train_dir = "./diffusion/image-to-prompt-train-valid-split-v5/train"
+        valid_dir = "./diffusion/image-to-prompt-train-valid-split-v5/validation"
 
     assert CFG.scheduler in ["CosineSchedulerWithWarmup", "CosineAnnealingLR"]
 

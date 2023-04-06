@@ -3,12 +3,13 @@ import os
 import random
 import shutil
 import warnings
-from typing import Optional
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 import timm
 import torch
+from pydantic import BaseModel
 from scipy import spatial
 from timm.utils import AverageMeter
 from torch import nn
@@ -196,40 +197,46 @@ def train(
 
 if __name__ == "__main__":
 
-    class CFG:
-        model_name = "vit_base_patch32_224_clip_laion2b"
-        input_size = (224, 224)
-        batch_size = 256
-        num_epochs = 5
-        lr = 1e-4
-        seed = 42
+    class Config(BaseModel):
+        model_name: str = "vit_huge_patch14_224_clip_laion2b"
+        input_size: Tuple[int, int] = (224, 224)
+        batch_size: int = 256
+        num_epochs: int = 5
+        lr: float = 1e-4
+        seed: int = 42
         lr_scaling_factor: Optional[float] = None
-        dropout_rate = 0.1
-        scheduler = "CosineAnnealingLR"
-        warmup_steps = 200
-        use_aug = True
-        use_amp = True
+        dropout_rate: float = 0.2
+        scheduler: str = "CosineAnnealingLR"
+        warmup_steps: int = 200
+        use_aug: bool = True
+        use_amp: bool = True
 
-        output_path = f"{model_name}_on_v5_aug_do01_2fc"
-        train_metadata_file = "metadata.jsonl"
-        valid_metadata_file = "metadata.jsonl"
+        output_path: str = f"{model_name}_on_v5_aug_do02_2fc___"
+        train_metadata_file: str = "metadata.jsonl"
+        valid_metadata_file: str = "metadata.jsonl"
 
-        train_dir = "./diffusion/image-to-prompt-train-valid-split-v5/train"
-        valid_dir = "./diffusion/image-to-prompt-train-valid-split-v5/validation"
+        train_dir: str = "./diffusion/image-to-prompt-train-valid-split-v5/train"
+        valid_dir: str = "./diffusion/image-to-prompt-train-valid-split-v5/validation"
 
-    assert CFG.scheduler in ["CosineSchedulerWithWarmup", "CosineAnnealingLR"]
+    config = Config()
 
-    seed_everything(CFG.seed)
+    assert config.scheduler in ["CosineSchedulerWithWarmup", "CosineAnnealingLR"]
 
-    os.makedirs(CFG.output_path, exist_ok=True)
-    shutil.copy("./run_train_vit.py", os.path.join(CFG.output_path, "run_train_vit.py"))
-    shutil.copy("./dataset.py", os.path.join(CFG.output_path, "dataset.py"))
+    seed_everything(config.seed)
+
+    os.makedirs(config.output_path, exist_ok=True)
+    shutil.copy(
+        "./run_train_vit.py", os.path.join(config.output_path, "run_train_vit.py")
+    )
+    shutil.copy("./dataset.py", os.path.join(config.output_path, "dataset.py"))
     with open(
-        os.path.join(CFG.output_path, "train_conf.json"), "w", encoding="utf-8"
+        os.path.join(config.output_path, "train_conf.json"), "w", encoding="utf-8"
     ) as f:
-        f.write(json.dumps(vars(CFG())))
+        cfg_str = json.dumps(vars(config), indent=4)
+        print(cfg_str)
+        f.write(cfg_str)
 
-    with open(os.path.join(CFG.train_dir, CFG.train_metadata_file)) as f:
+    with open(os.path.join(config.train_dir, config.train_metadata_file)) as f:
         train_data = {
             "filepath": [],
             "prompt": [],
@@ -237,13 +244,13 @@ if __name__ == "__main__":
         for line in f:
             item = json.loads(line)
             train_data["filepath"].append(
-                os.path.join(CFG.train_dir, item["file_name"])
+                os.path.join(config.train_dir, item["file_name"])
             )
             train_data["prompt"].append(item["text"])
 
         train_df = pd.DataFrame.from_dict(train_data)
 
-    with open(os.path.join(CFG.valid_dir, CFG.valid_metadata_file)) as f:
+    with open(os.path.join(config.valid_dir, config.valid_metadata_file)) as f:
         validation_data = {
             "filepath": [],
             "prompt": [],
@@ -251,7 +258,7 @@ if __name__ == "__main__":
         for line in f:
             item = json.loads(line)
             validation_data["filepath"].append(
-                os.path.join(CFG.valid_dir, item["file_name"])
+                os.path.join(config.valid_dir, item["file_name"])
             )
             validation_data["prompt"].append(item["text"])
 
@@ -260,16 +267,16 @@ if __name__ == "__main__":
     train(
         train_df,
         valid_df,
-        CFG.model_name,
-        CFG.input_size,
-        CFG.batch_size,
-        CFG.num_epochs,
-        CFG.lr,
-        CFG.lr_scaling_factor,
-        CFG.dropout_rate,
-        CFG.output_path,
-        CFG.scheduler,
-        CFG.warmup_steps,
-        CFG.use_aug,
-        CFG.use_amp,
+        config.model_name,
+        config.input_size,
+        config.batch_size,
+        config.num_epochs,
+        config.lr,
+        config.lr_scaling_factor,
+        config.dropout_rate,
+        config.output_path,
+        config.scheduler,
+        config.warmup_steps,
+        config.use_aug,
+        config.use_amp,
     )

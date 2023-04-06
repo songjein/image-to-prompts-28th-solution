@@ -6,14 +6,12 @@ import numpy as np
 import torch
 from datasets import load_dataset
 from timm.utils import AverageMeter
+from torch.cuda.amp import GradScaler, autocast
+from torch.nn.utils import clip_grad_norm_
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
-from transformers import (
-    AutoModelForCausalLM,
-    AutoProcessor,
-    BlipForConditionalGeneration,
-    get_cosine_schedule_with_warmup,
-)
+from transformers import (AutoModelForCausalLM, AutoProcessor,
+                          get_cosine_schedule_with_warmup)
 
 import wandb
 
@@ -82,17 +80,19 @@ def evaluate(valid_dataloader, model):
 
 if __name__ == "__main__":
     # CUDA_VISIBLE_DEVICES=0,1 python run_train.py
+    # https://github.com/NielsRogge/Transformers-Tutorials/blob/master/GIT/Fine_tune_GIT_on_an_image_captioning_dataset.ipynb
 
     wandb.login()
 
-    # model_name = "Salesforce/blip-image-captioning-base"
     model_name = "microsoft/git-base"
     epochs = 10
-    batch_size = 16
-    valid_batch_size = 16
-    learning_rate = 5e-5
-    valid_steps = 1000
+    batch_size = 32
+    grad_accum_steps = 16
+    valid_batch_size = 32
+    learning_rate = 2.5e-6
+    valid_steps = 100
     warmup_ratio = 0.05
+    use_amp = True
     seed = 42
     memo = f"git-model-{seed}s-{epochs}ep-{model_name}"
 
@@ -115,11 +115,19 @@ if __name__ == "__main__":
 
     seed_everything(seed)
 
+    # https://huggingface.co/docs/datasets/image_load#imagefolder
+    # https://huggingface.co/docs/datasets/image_dataset
     train_dataset = load_dataset(
-        "imagefolder", data_dir="./diffusion", split="train", num_proc=8
+        "imagefolder",
+        data_dir="./diffusion/image-to-prompt-train-valid-split-v5",
+        split="train",
+        num_proc=8,
     )
     valid_dataset = load_dataset(
-        "imagefolder", data_dir="./diffusion", split="validation", num_proc=8
+        "imagefolder",
+        data_dir="./diffusion/image-to-prompt-train-valid-split-v5",
+        split="validation",
+        num_proc=8,
     )
 
     processor = AutoProcessor.from_pretrained(model_name)
@@ -131,10 +139,7 @@ if __name__ == "__main__":
     train_dataloader = DataLoader(train_dataset, shuffle=True, batch_size=batch_size)
     valid_dataloader = DataLoader(valid_dataset, shuffle=True, batch_size=batch_size)
 
-    if "blip" in model_name:
-        model = BlipForConditionalGeneration.from_pretrained(model_name)
-    else:
-        model = AutoModelForCausalLM.from_pretrained(model_name)
+    model = AutoModelForCausalLM.from_pretrained(model_name)
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)
@@ -143,29 +148,56 @@ if __name__ == "__main__":
     warmup_steps = int(total_steps * warmup_ratio)
     scheduler = get_cosine_schedule_with_warmup(optimizer, warmup_steps, total_steps)
 
-    model.train()
+    scaler = GradScaler(enabled=use_amp)
 
     best_score = 9999
+    logging_loss = torch.tensor(0.0).cuda()
+    step, accumulated_steps = 0, 0
     for epoch in range(epochs):
+        model.train()
+
         data_loader_tqdm = tqdm(train_dataloader, file=sys.stdout)
         for idx, batch in enumerate(data_loader_tqdm):
+            accumulated_steps += 1
+
             input_ids = batch.pop("input_ids").to(device)
             pixel_values = batch.pop("pixel_values").to(device)
 
-            outputs = model(
-                input_ids=input_ids, pixel_values=pixel_values, labels=input_ids
-            )
-            loss = outputs.loss
+            with autocast(enabled=use_amp, dtype=torch.float16):
+                outputs = model(
+                    input_ids=input_ids, pixel_values=pixel_values, labels=input_ids
+                )
+                loss = outputs.loss
+                loss /= grad_accum_steps
 
-            wandb.log({"train_loss": loss.item()})
-            data_loader_tqdm.set_description(f"Epoch {epoch}, loss: {loss.item()}")
+            logging_loss += loss.detach()
 
-            loss.backward()
-            optimizer.step()
+            scaler.scale(loss).backward()
+
+            if accumulated_steps < grad_accum_steps:
+                continue
+
+            accumulated_steps = 0
+            step += 1
+
+            scaler.unscale_(optimizer)
+            clip_grad_norm_(model.parameters(), max_norm=1.0)
+            scaler.step(optimizer)
+            scaler.update()
             scheduler.step()
-            optimizer.zero_grad()
 
-            if idx > 0 and idx % valid_steps == 0:
+            optimizer.zero_grad(set_to_none=True)
+
+            if step % 10 == 0:
+                mean_loss = logging_loss / 10
+                mean_loss = mean_loss.item()
+
+                wandb.log({"train_loss": mean_loss})
+                data_loader_tqdm.set_description(f"Epoch {epoch}, loss: {mean_loss}")
+
+                logging_loss = torch.tensor(0.0).cuda()
+
+            if step > 0 and step % valid_steps == 0:
                 valid_score = evaluate(valid_dataloader, model)
                 wandb.log({"valid_loss": valid_score})
 

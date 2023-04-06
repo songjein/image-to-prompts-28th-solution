@@ -12,6 +12,7 @@ import torch
 from scipy import spatial
 from timm.utils import AverageMeter
 from torch import nn
+from torch.cuda.amp import GradScaler, autocast
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from tqdm import tqdm
 from transformers import get_cosine_schedule_with_warmup
@@ -55,6 +56,7 @@ def train(
     scheduler,
     warmup_steps,
     use_aug,
+    use_amp,
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dataloaders = get_dataloaders(train_df, valid_df, input_size, batch_size, use_aug)
@@ -118,6 +120,8 @@ def train(
 
     criterion = nn.CosineEmbeddingLoss()
 
+    scaler = GradScaler(enabled=use_amp)
+
     best_score = -1.0
 
     for epoch in range(num_epochs):
@@ -131,12 +135,14 @@ def train(
 
             optimizer.zero_grad()
 
-            X_out = model(X)
-            target = torch.ones(X.size(0)).to(device)
-            loss = criterion(X_out, y, target)
-            loss.backward()
+            with autocast(enabled=use_amp, dtype=torch.float16):
+                X_out = model(X)
+                target = torch.ones(X.size(0)).to(device)
+                loss = criterion(X_out, y, target)
 
-            optimizer.step()
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
 
             trn_loss = loss.item()
             trn_cos = cosine_similarity(
@@ -191,7 +197,7 @@ def train(
 if __name__ == "__main__":
 
     class CFG:
-        model_name = "vit_large_patch14_clip_224.openai_ft_in12k_in1k"
+        model_name = "vit_base_patch32_224_clip_laion2b"
         input_size = (224, 224)
         batch_size = 256
         num_epochs = 5
@@ -202,6 +208,7 @@ if __name__ == "__main__":
         scheduler = "CosineAnnealingLR"
         warmup_steps = 200
         use_aug = True
+        use_amp = True
 
         output_path = f"{model_name}_on_v5_aug_do01_2fc"
         train_metadata_file = "metadata.jsonl"
@@ -264,4 +271,5 @@ if __name__ == "__main__":
         CFG.scheduler,
         CFG.warmup_steps,
         CFG.use_aug,
+        CFG.use_amp,
     )

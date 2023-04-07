@@ -16,11 +16,29 @@ from torch import nn
 from torch.cuda.amp import GradScaler, autocast
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from tqdm import tqdm
-from transformers import get_cosine_schedule_with_warmup
+from transformers import AutoModel, get_cosine_schedule_with_warmup
 
 from dataset import get_dataloaders
 
 warnings.filterwarnings("ignore")
+
+
+class HFVitModel(nn.Module):
+    def __init__(self, model_path_or_name, hidden_size=1024, dropout_rate=0.1):
+        super(HFVitModel, self).__init__()
+
+        clip = AutoModel.from_pretrained(model_path_or_name)
+        self.vision = clip.vision_model
+        self.fc = torch.nn.Sequential(
+            torch.nn.Dropout(p=dropout_rate),
+            torch.nn.Linear(hidden_size, hidden_size),
+            torch.nn.GELU(),
+            torch.nn.Linear(hidden_size, 384),
+        )
+
+    def forward(self, x):
+        out = self.vision(x)["pooler_output"]
+        return self.fc(out)
 
 
 def seed_everything(seed):
@@ -58,16 +76,19 @@ def train(
     warmup_steps,
     use_aug,
     use_amp,
+    use_hf_model,
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    dataloaders = get_dataloaders(train_df, valid_df, input_size, batch_size, use_aug)
+    dataloaders = get_dataloaders(
+        train_df, valid_df, input_size, batch_size, use_aug, use_hf_model, model_name
+    )
 
     model = timm.create_model(model_name, pretrained=True, num_classes=384)
     if dropout_rate > 0.0:
         model.haed = torch.nn.Sequential(
             torch.nn.Dropout(p=dropout_rate),
             torch.nn.Linear(model.head.in_features, model.head.in_features),
-            torch.nn.ReLU(),
+            torch.nn.GELU(),
             torch.nn.Linear(model.head.in_features, 384),
         )
 
@@ -198,20 +219,25 @@ def train(
 if __name__ == "__main__":
 
     class Config(BaseModel):
+        memo = "on_v5_aug_do01_2fc_1e5_gelu"
         model_name: str = "vit_huge_patch14_224_clip_laion2b"
+        #: True로 설정시 laion/CLIP-ViT-H-14-laion2B-s32B-b79K 와 같은 허깅페이스 호환모델 전달
+        use_hf_model: bool = False
+        if use_hf_model:
+            model_name = "laion/CLIP-ViT-H-14-laion2B-s32B-b79K"
         input_size: Tuple[int, int] = (224, 224)
         batch_size: int = 256
         num_epochs: int = 5
-        lr: float = 1e-4
+        lr: float = 1e-5  # large: 1e-4, huge: 1e-5
         seed: int = 42
         lr_scaling_factor: Optional[float] = None
-        dropout_rate: float = 0.2
+        dropout_rate: float = 0.1
         scheduler: str = "CosineAnnealingLR"
         warmup_steps: int = 200
         use_aug: bool = True
         use_amp: bool = True
 
-        output_path: str = f"{model_name}_on_v5_aug_do02_2fc___"
+        output_path: str = f"{model_name}_{memo}"
         train_metadata_file: str = "metadata.jsonl"
         valid_metadata_file: str = "metadata.jsonl"
 
@@ -279,4 +305,5 @@ if __name__ == "__main__":
         config.warmup_steps,
         config.use_aug,
         config.use_amp,
+        config.use_hf_model,
     )

@@ -1,8 +1,10 @@
 import albumentations as A
 import cv2
 import torch
+from PIL import Image
 from sentence_transformers import SentenceTransformer
 from torch.utils.data import DataLoader, Dataset
+from transformers import AutoProcessor
 
 IMAGENET_MEAN_RGB = [0.485, 0.456, 0.406]
 IMAGENET_STD_RGB = [0.229, 0.224, 0.225]
@@ -34,28 +36,43 @@ def get_transformation_for_train(image_size) -> A.Compose:
 
 
 class DiffusionDataset(Dataset):
-    def __init__(self, df, transform, image_size=(224, 224)):
+    def __init__(
+        self,
+        df,
+        transform,
+        image_size=(224, 224),
+        use_hf_model=False,
+        model_path_or_name=None,
+    ):
         self.df = df
         self.transform = transform
         self.img_size = image_size
+
+        self.input_processor = None
+        if use_hf_model:
+            self.input_processor = AutoProcessor.from_pretrained(model_path_or_name)
 
     def __len__(self):
         return len(self.df)
 
     def __getitem__(self, idx):
         row = self.df.iloc[idx]
-        # read image using cv2
-        image = cv2.imread(row["filepath"])
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        if self.transform:
-            image = self.transform(image=image)["image"]
+        if self.input_processor is None:
+            image = cv2.imread(row["filepath"])
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        image = cv2.resize(image, self.img_size, interpolation=cv2.INTER_AREA)
-        image = image / 255.0
-        image = (image - IMAGENET_MEAN_RGB) / IMAGENET_STD_RGB
-        image = image.transpose(2, 0, 1)
-        image = torch.tensor(image, dtype=torch.float)
+            if self.transform:
+                image = self.transform(image=image)["image"]
+
+            image = cv2.resize(image, self.img_size, interpolation=cv2.INTER_AREA)
+            image = image / 255.0
+            image = (image - IMAGENET_MEAN_RGB) / IMAGENET_STD_RGB
+            image = image.transpose(2, 0, 1)
+            image = torch.tensor(image, dtype=torch.float)
+        else:
+            image = Image.open(row["filepath"])
+            image = self.input_processor(image)
 
         prompt = row["prompt"]
         return image, prompt
@@ -76,12 +93,16 @@ class DiffusionCollator:
         return images, prompt_embeddings
 
 
-def get_dataloaders(trn_df, val_df, image_size, batch_size, use_aug):
+def get_dataloaders(
+    trn_df, val_df, image_size, batch_size, use_aug, use_hf_model, model_name
+):
     train_transform = None
     if use_aug:
         train_transform = get_transformation_for_train(image_size)
-    trn_dataset = DiffusionDataset(trn_df, train_transform, image_size)
-    val_dataset = DiffusionDataset(val_df, None, image_size)
+    trn_dataset = DiffusionDataset(
+        trn_df, train_transform, image_size, use_hf_model, model_name
+    )
+    val_dataset = DiffusionDataset(val_df, None, image_size, use_hf_model, model_name)
     collator = DiffusionCollator()
 
     dataloaders = {}

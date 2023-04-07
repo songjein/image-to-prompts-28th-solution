@@ -79,27 +79,25 @@ class ImageTextDataset(Dataset):
         pixel_values = torch.tensor(image, dtype=torch.float)
 
         # Load and preprocess the text
-        # [<IMG>, BOS, prompt_texet, EOS]
+        # [<IMG>, prompt_texet, EOS]
         text = row["text"]
         inputs = self.tokenizer(
-            text, truncation=True, max_length=self.max_seq_length - 3
+            text, truncation=True, max_length=self.max_seq_length - 2
         )
-        input_ids = (
-            [self.image_token_id, self.eos_token_id]
-            + inputs["input_ids"]
-            + [self.eos_token_id]
-        )
-        attention_mask = [1, 1] + inputs["attention_mask"] + [1]
+        input_ids = [self.image_token_id] + inputs["input_ids"] + [self.eos_token_id]
+        attention_mask = [1] + inputs["attention_mask"] + [1]
         image_token_mask = [1] + [0] * (len(input_ids) - 1)
 
         # padding ids
         num_padded = self.max_seq_length - len(input_ids)
         padded_input_ids = [self.pad_token_id] * num_padded + input_ids
+        padded_label_ids = [-100] * num_padded + input_ids
         padded_attention_mask = [0] * num_padded + attention_mask
         padded_image_token_mask = [0] * num_padded + image_token_mask
 
         # Convert input_ids and attention_mask to tensors
         padded_input_ids = torch.tensor(padded_input_ids, dtype=torch.long)
+        padded_label_ids = torch.tensor(padded_label_ids, dtype=torch.long)
         padded_attention_mask = torch.tensor(padded_attention_mask, dtype=torch.long)
         padded_image_token_mask = torch.tensor(
             padded_image_token_mask, dtype=torch.long
@@ -107,6 +105,7 @@ class ImageTextDataset(Dataset):
 
         return {
             "input_ids": padded_input_ids,
+            "label_ids": padded_label_ids,
             "attention_mask": padded_attention_mask,
             "image_token_mask": padded_image_token_mask,
             "pixel_values": pixel_values,

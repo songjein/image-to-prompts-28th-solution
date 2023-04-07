@@ -49,7 +49,8 @@ if __name__ == "__main__":
     vm = VisionModel(model_name=vm_name, out_features=config.n_embd)
 
     # Add the special PAD token
-    tokenizer.add_special_tokens({"pad_token": "[PAD]"})
+    # tokenizer.add_special_tokens({"pad_token": "[PAD]"})
+    tokenizer.pad_token = tokenizer.eos_token
     tokenizer.add_tokens(["<IMG>"])
     # Resize the model's token embeddings to account for the new token(s)
     lm.resize_token_embeddings(len(tokenizer))
@@ -104,7 +105,7 @@ if __name__ == "__main__":
     num_epochs = 5
     num_training_steps = num_epochs * len(train_dataloader)
     warmup_steps = int(0.1 * num_training_steps)
-    validation_step = 200  # num_training_steps //10
+    validation_step = 100  # num_training_steps //10
     train_loss_check_step = 50  # len(train_dataloader) //5
     best_loss = 1000.0
     step = 0
@@ -136,7 +137,7 @@ if __name__ == "__main__":
             attention_mask = batch["attention_mask"].to(device)
             image_token_mask = batch["image_token_mask"].to(device)
             pixel_values = batch["pixel_values"].to(device)
-            labels = batch["input_ids"].to(device)
+            labels = batch["label_ids"].to(device)
 
             # Forward pass
             with autocast(enabled=use_amp, dtype=torch.bfloat16):
@@ -183,8 +184,9 @@ if __name__ == "__main__":
                         num_val_batches += 1
                         input_ids = val_batch["input_ids"].to(device)
                         attention_mask = val_batch["attention_mask"].to(device)
+                        image_token_mask = val_batch["image_token_mask"].to(device)
                         pixel_values = val_batch["pixel_values"].to(device)
-                        labels = val_batch["input_ids"].to(device)
+                        labels = val_batch["label_ids"].to(device)
 
                         outputs = model(
                             input_ids=input_ids,

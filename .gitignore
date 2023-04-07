@@ -6,3 +6,9 @@ diffusion/
 *.csv
 *.txt
 __pycache__/
+
+
+notebooks/
+datasets/
+venv/
+input/

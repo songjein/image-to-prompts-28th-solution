@@ -89,8 +89,6 @@ def train(
         image_size,
         batch_size,
         use_aug,
-        use_hf_model,
-        model_name,
         image_mean,
         image_std,
     )
@@ -100,6 +98,7 @@ def train(
     else:
         model = timm.create_model(model_name, pretrained=True, num_classes=384)
         if dropout_rate > 0.0:
+            print("apply dropout", dropout_rate)
             model.haed = torch.nn.Sequential(
                 torch.nn.Dropout(p=dropout_rate),
                 torch.nn.Linear(model.head.in_features, model.head.in_features),
@@ -268,6 +267,7 @@ if __name__ == "__main__":
     seed_everything(config.seed)
 
     os.makedirs(config.output_path, exist_ok=True)
+    assert os.path.exists(config.output_path)
     shutil.copy(
         "./run_train_vit.py", os.path.join(config.output_path, "run_train_vit.py")
     )

@@ -28,7 +28,9 @@ class HFVitModel(nn.Module):
         super(HFVitModel, self).__init__()
 
         clip = AutoModel.from_pretrained(model_path_or_name)
+        clip.gradient_checkpointing_enable()
         self.vision = clip.vision_model
+
         self.fc = torch.nn.Sequential(
             torch.nn.Dropout(p=dropout_rate),
             torch.nn.Linear(hidden_size, hidden_size),
@@ -65,7 +67,7 @@ def train(
     train_df,
     valid_df,
     model_name,
-    input_size,
+    image_size,
     batch_size,
     num_epochs,
     lr,
@@ -77,25 +79,37 @@ def train(
     use_aug,
     use_amp,
     use_hf_model,
+    image_mean,
+    image_std,
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dataloaders = get_dataloaders(
-        train_df, valid_df, input_size, batch_size, use_aug, use_hf_model, model_name
+        train_df,
+        valid_df,
+        image_size,
+        batch_size,
+        use_aug,
+        use_hf_model,
+        model_name,
+        image_mean,
+        image_std,
     )
 
-    model = timm.create_model(model_name, pretrained=True, num_classes=384)
-    if dropout_rate > 0.0:
-        model.haed = torch.nn.Sequential(
-            torch.nn.Dropout(p=dropout_rate),
-            torch.nn.Linear(model.head.in_features, model.head.in_features),
-            torch.nn.GELU(),
-            torch.nn.Linear(model.head.in_features, 384),
-        )
+    if use_hf_model:
+        model = HFVitModel(model_name, dropout_rate=dropout_rate)
+    else:
+        model = timm.create_model(model_name, pretrained=True, num_classes=384)
+        if dropout_rate > 0.0:
+            model.haed = torch.nn.Sequential(
+                torch.nn.Dropout(p=dropout_rate),
+                torch.nn.Linear(model.head.in_features, model.head.in_features),
+                torch.nn.GELU(),
+                torch.nn.Linear(model.head.in_features, 384),
+            )
+        model.set_grad_checkpointing()
 
-    fp_log = open(os.path.join(output_path, "logs.txt"), "w", encoding="utf-8")
-
-    model.set_grad_checkpointing()
     model.to(device)
+    fp_log = open(os.path.join(output_path, "logs.txt"), "w", encoding="utf-8")
 
     if lr_scaling_factor is not None:
         lr_dict = dict()
@@ -219,17 +233,20 @@ def train(
 if __name__ == "__main__":
 
     class Config(BaseModel):
+        seed: int = 42
+
         memo = "on_v5_aug_do01_2fc_1e5_gelu"
         model_name: str = "vit_huge_patch14_224_clip_laion2b"
         #: True로 설정시 laion/CLIP-ViT-H-14-laion2B-s32B-b79K 와 같은 허깅페이스 호환모델 전달
-        use_hf_model: bool = False
+        use_hf_model: bool = True
         if use_hf_model:
-            model_name = "laion/CLIP-ViT-H-14-laion2B-s32B-b79K"
-        input_size: Tuple[int, int] = (224, 224)
-        batch_size: int = 256
+            model_name = "openai/clip-vit-large-patch14-336"
+        image_size: Tuple[int, int] = (336, 336)
+        image_mean = [0.48145466, 0.4578275, 0.40821073]
+        image_std = [0.26862954, 0.26130258, 0.27577711]
+        batch_size: int = 128
         num_epochs: int = 5
         lr: float = 1e-5  # large: 1e-4, huge: 1e-5
-        seed: int = 42
         lr_scaling_factor: Optional[float] = None
         dropout_rate: float = 0.1
         scheduler: str = "CosineAnnealingLR"
@@ -237,7 +254,7 @@ if __name__ == "__main__":
         use_aug: bool = True
         use_amp: bool = True
 
-        output_path: str = f"{model_name}_{memo}"
+        output_path: str = f"{model_name.replace('/', '-')}_{memo}"
         train_metadata_file: str = "metadata.jsonl"
         valid_metadata_file: str = "metadata.jsonl"
 
@@ -294,7 +311,7 @@ if __name__ == "__main__":
         train_df,
         valid_df,
         config.model_name,
-        config.input_size,
+        config.image_size,
         config.batch_size,
         config.num_epochs,
         config.lr,
@@ -306,4 +323,6 @@ if __name__ == "__main__":
         config.use_aug,
         config.use_amp,
         config.use_hf_model,
+        config.image_mean,
+        config.image_std,
     )

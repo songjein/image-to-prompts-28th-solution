@@ -102,7 +102,7 @@ class LanguageModel(GPT2LMHeadModel):
         if image_token_embeddings is not None:
             if input_ids is not None:
                 inputs_embeds = self.transformer.wte(input_ids)
-                inputs_embeds[:0] = image_token_embeddings.type(inputs_embeds.dtype)
+                inputs_embeds[:, 0] = image_token_embeddings.type(inputs_embeds.dtype)
                 input_ids = None
             else:
                 inputs_embeds = image_token_embeddings.unsqueeze(1)

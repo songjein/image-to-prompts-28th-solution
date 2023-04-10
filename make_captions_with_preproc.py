@@ -9,19 +9,39 @@ from tqdm import tqdm
 
 def preprocess(text: str) -> Optional[str]:
     text = text.strip()
-    orig_text = text
 
     concat_text = text.replace(" ", "")
     if "http" in concat_text:
         return None
 
-    # NOTE: 기존에 있던 스탑워드 필터링 제거함 > 추후에 필요하다면 replace로 대체
+    # [0] 사전 필터링
+
+    words = text.split()
+    uniq_words = set(words)
+
+    # [순서 중요] 반복 단어 개수 비율
+    diff_uniq_words_ratio = (len(words) - len(uniq_words)) / len(words)
+    if diff_uniq_words_ratio > 0.55:
+        return None
+
+    # [순서 중요] 빈칸으로 쪼갰을 때 각 단어의 평균 길이
+    len_sub_words = [len(word) for word in words]
+    if sum(len_sub_words) / len(len_sub_words) < 2.5:
+        return None
 
     # [1] 전처리
+
+    # 알수 없는 문자 제거
+    text = text.replace("ï¿½", "")
+    text = text.replace(";", ", ")
+
+    # 콤마 좌우에 빈칸 없는 경우
+    text = re.sub(r"(?<=[^ ]),(?=[^ ])", ", ", text)
+
     # 숫자 사이의 빈칸 제거
     text = re.sub(r"(?<=\d)\s+(?=\d)", "", text)
 
-    # 연속된 스페이스 하나로 통일
+    # 연속된 스페이스 하나로 통일 1
     text = re.sub(r"\s+", " ", text)
 
     # 반복된 특수문자 1개로 통일
@@ -30,10 +50,10 @@ def preprocess(text: str) -> Optional[str]:
     # n - 5, n 9 패턴 제거
     text = re.sub(r"\bn\s*-?\s*\d+\b", "", text)
 
-    # n과 숫자 사이의 빈칸 제거
+    # n과 숫자 사이의 빈칸 제거 ?
     text = re.sub(r"\sn\s*(\d)", r" n\1", text)
 
-    # k와 숫자 사이의 빈칸 제거
+    # k와 숫자 사이의 빈칸 제거 ?
     text = re.sub(r"\b(\d+)\s*k\b", r"\1k", text)
 
     # h, w과 숫자 사이의 빈칸 제거
@@ -60,18 +80,13 @@ def preprocess(text: str) -> Optional[str]:
     # uhd, fhd, ... 패턴
     text = re.sub(r"(?i)\b(ultra hd|fullhd|ultrahd|fhd|uhd|hd|hq|hdr)\b", "", text)
 
-    # 4k, 8k, shuttershock 없애기
-    text = (
-        text.replace("8k", "")
-        .replace("8K", "")
-        .replace("4k", "")
-        .replace("4K", "")
-        .replace("shuttershock", "")
-    )
+    # trending on + word 패턴
+    text = re.sub(r"\b(?:trending|featured)\b on \b\w+\b", "", text)
 
     # high resolution, unreal engine, award winning 제거
     text = re.sub(r"high-? resolution", "", text, flags=re.IGNORECASE)
     text = re.sub(r"unreal\s?engine", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"cry\s?engine", "", text, flags=re.IGNORECASE)
     text = re.sub(
         r"award\s?-?winning(\sphotography)?(\sphoto)?", "", text, flags=re.IGNORECASE
     )
@@ -91,36 +106,108 @@ def preprocess(text: str) -> Optional[str]:
     # 숫자mm lens 패턴 없애기
     text = re.sub(r"\b(using )?\d+mm lens\b", "", text)
 
-    # 연속된 스페이스 하나로 통일
+    # 연속된 스페이스 하나로 통일 2
     text = re.sub(r"\s+", " ", text)
 
-    # 연속된 , , 없애기
+    # 연속된 , , 없애기 [1회 반복]
     text = re.sub(r",\s,\s,", ", ", text)
     text = re.sub(r",\s,", ", ", text)
 
-    # 연속된 . . 없애기
+    # 연속된 . . 없애기 [1회 반복]
     text = re.sub(r"\.\s\.\s\.", ". ", text)
     text = re.sub(r"\.\s\.", ". ", text)
 
-    # 연속된 ; ; 없애기
+    # 연속된 ; ; 없애기 [1회 반복]
     text = re.sub(r";\s;\s;", "; ", text)
     text = re.sub(r";\s;", "; ", text)
 
-    # 연속된 스페이스 하나로 통일
-    text = re.sub(r"\s+", " ", text).strip()
+    # seed 숫자 제거
+    text = re.sub(r"\bseed\b \d+", "", text).strip()
 
-    # 마지막 구두점 제거
-    text = re.sub(r"[^\w\s]+$", "", text)
+    # [2] 필터링 + 치환
 
-    # 문장 시작 구두점 제거
-    text = re.sub(r"^\W+", "", text)
+    # [순서 중요] 콤마가 10번 이상 등장
+    if text.count(",") >= 10:
+        return None
 
-    # [2] 필터링
+    # [순서 중요] by 뒤에 콤마가 3번 이상 등장
+    by_pattern = " by "
+    by_fp_pattern = "ed by "  # consumed, surrounded, scorched, squished, ignited, ...
+    and_pattern = " and "
+    if by_pattern in text and by_fp_pattern not in text:
+        index = text.index(by_pattern)
+        if by_pattern in text and text[index + 2 :].count(",") >= 3:
+            text = text[:index].strip()
+            if text[-1] == ",":
+                text = text[:-1]
+
+    # [순서 중요] by 뒤에 (and 개수 + by 개수) 두개 이상 등장
+    if by_pattern in text:
+        index = text.index(by_pattern)
+        if (
+            by_pattern in text
+            and by_fp_pattern not in text
+            and (
+                text[index + 2 :].count(and_pattern)
+                + text[index + 2 :].count(by_pattern)
+            )
+            >= 2
+        ):
+            text = text[:index].strip()
+            if text[-1] == ",":
+                text = text[:-1]
+
+    # [순서 중요] by 부터 가장 가까운 콤마까지 빈칸 치환
+    text = re.sub(r"\bby\b.*?,", "", text)
+
+    # 추가 스탑워드 패턴 제거
+    # todo: station art trending on artstation by art station at his art station
+    stop_patterns = [
+        "by art station",
+        "highly detailed digital",
+        "greg rutkowski and",
+        "artstation concept art",
+        "and greg rutkowski",
+        "digital painting artstation",
+        "painting artstation concept",
+        "hyperdetailed artstation cgsociety",
+        "by artstation",
+        "octane render",
+        "highly detailed",
+        "contest winner",
+        "artstation",
+        "art station",
+        "cgsociety",
+        "deviantart",
+        "pinterest",
+        "shuttershock",
+        "/r/",
+        "8k",
+        "4k",
+    ]
+    for pattern in stop_patterns:
+        regex_pattern = re.compile(
+            r"\b" + re.escape(pattern) + r"\b", flags=re.IGNORECASE
+        )
+        text = regex_pattern.sub("", text).strip()
+
+    # 연속된 , , 없애기 [2회 반복]
+    text = re.sub(r",\s,\s,", ", ", text)
+    text = re.sub(r",\s,", ", ", text)
+
+    # 연속된 . . 없애기 [2회 반복]
+    text = re.sub(r"\.\s\.\s\.", ". ", text)
+    text = re.sub(r"\.\s\.", ". ", text)
+
+    # 연속된 ; ; 없애기 [2회 반복]
+    text = re.sub(r";\s;\s;", "; ", text)
+    text = re.sub(r";\s;", "; ", text)
 
     # 길이 기준 필터링 (하위 5%?, 상위 5%)
     if len(text) < 16 or len(text) > 256:
         return None
 
+    #: 현재 상태에서 단어 분리
     words = text.split()
     uniq_words = set(words)
 
@@ -129,62 +216,99 @@ def preprocess(text: str) -> Optional[str]:
     if num_uniq_words <= 3:
         return None
 
-    # 반복 단어 개수 비율
-    diff_uniq_words_ratio = (len(words) - len(uniq_words)) / len(words)
-    if diff_uniq_words_ratio > 0.55:
-        return None
+    # [순서 중요] uni-gram 반복 교정
+    text = re.sub(r"\b(\w+)(\s+\1\b)+", r"\1", text, flags=re.IGNORECASE).strip()
 
-    # 빈칸으로 쪼갰을 때 각 단어의 평균 길이
-    len_sub_words = [len(word) for word in words]
-    if sum(len_sub_words) / len(len_sub_words) < 2.5:
-        return None
+    # [순서 중요] bi-gram 반복 교정
+    text = re.sub(r"\b(\w+\s+\w+)(\s+\1\b)+", r"\1", text, flags=re.IGNORECASE).strip()
 
     # 자기 생각 적어놓은 류
-    patterns = r"(?i)\b(i'll|i'm|i am|if you|isn't|i need|help me|i like|i had|you know|i have)\b"
+    patterns = r"(?i)\b(i'll|i'm|i am|if you|if my|isn't|i need|help me|i like|i had|you know|i have)\b"
     if re.search(patterns, text, re.IGNORECASE):
         return None
+
+    # 연속된 스페이스 하나로 통일
+    text = re.sub(r"\s+", " ", text).strip()
+
+    # 마지막 구두점 제거
+    text = re.sub(r"[^\w\s]+$", "", text).strip()
+
+    # 문장 시작 구두점 제거
+    text = re.sub(r"^\W+", "", text).strip()
 
     return text
 
 
 if __name__ == "__main__":
-    prefix = "openprompts_"
-    input_path = "./resources/openprompts_dedup_075_filtered_cross_dedup.txt"
-    output_path = "./diffusion/openprompts_images/metadata.jsonl"  # 기존엔 168166
-    image_dir_path = "./diffusion/openprompts_images"
+    prefix = "gpt2_"
+    # input_path = "./diffusion/sd2gpt2/prompts.txt"
+    # output_path = "./diffusion/sd2gpt2/images/metadata.jsonl"
+    # image_dir_path = "./diffusion/sd2gpt2/images"
+
+    #: TODO 임시
+    input_path = "./diffusion/900k_dedup_08_split_dedup_wt_wv.txt"
+    output_path = "./diffusion/tmp.txt"
+    image_dir_path = None
 
     skip_cnt = 0
 
-    captions = []
-    with open(input_path) as f:
-        for idx, line in enumerate(tqdm(f)):
-            file_name = f"{prefix}{idx:08d}.jpg"
-            path = os.path.join(image_dir_path, file_name)
-            if not os.path.exists(path):
-                continue
-            prompt = line.strip()
+    if image_dir_path is not None:
+        captions = []
+        with open(input_path) as f:
+            for idx, line in enumerate(tqdm(f)):
+                file_name = f"{prefix}{idx:08d}.jpg"
+                path = os.path.join(image_dir_path, file_name)
+                if not os.path.exists(path):
+                    continue
+                prompt = line.strip()
 
-            try:
-                if detect(prompt) != "en":
+                try:
+                    if detect(prompt) != "en":
+                        skip_cnt += 1
+                        continue
+                except:
+                    print("exception at", prompt)
+
+                text = preprocess(prompt)
+                if text is None:
                     skip_cnt += 1
                     continue
-            except:
-                print("exception at", prompt)
 
-            text = preprocess(prompt)
-            if text is None:
-                skip_cnt += 1
-                continue
+                captions.append(
+                    {
+                        "file_name": file_name,
+                        "text": text,
+                        "orig_text": prompt,
+                    }
+                )
 
-            captions.append(
-                {
-                    "file_name": file_name,
-                    "text": text,
-                }
-            )
+        with open(output_path, "w", encoding="utf-8") as f:
+            for caption in captions:
+                f.write(json.dumps(caption, ensure_ascii=False) + "\n")
 
-    with open(output_path, "w", encoding="utf-8") as f:
-        for caption in captions:
-            f.write(json.dumps(caption, ensure_ascii=False) + "\n")
+    else:
+        captions = []
+
+        with open(input_path) as f:
+            for idx, line in enumerate(tqdm(f)):
+                prompt = line.strip()
+
+                try:
+                    if detect(prompt) != "en":
+                        skip_cnt += 1
+                        continue
+                except:
+                    print("exception at", prompt)
+
+                text = preprocess(prompt)
+                if text is None:
+                    skip_cnt += 1
+                    continue
+
+                captions.append(prompt)
+
+        with open(output_path, "w", encoding="utf-8") as f:
+            for prompt in captions:
+                f.write(prompt + "\n")
 
     print(f"skip_count: {skip_cnt}")

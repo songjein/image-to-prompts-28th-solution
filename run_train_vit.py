@@ -29,11 +29,16 @@ class HFVitModel(nn.Module):
     ):
         super(HFVitModel, self).__init__()
 
-        clip = AutoModel.from_pretrained(model_path_or_name)
-        clip.gradient_checkpointing_enable()
-        self.vision = clip.vision_model
+        if "vit" in model_path_or_name and "clip" in model_path_or_name:
+            clip = AutoModel.from_pretrained(model_path_or_name)
+            clip.gradient_checkpointing_enable()
+            self.vision = clip.vision_model
+        else:
+            self.vision = AutoModel.from_pretrained(model_path_or_name)
+            self.vision.gradient_checkpointing_enable()
 
         if dropout_rate > 0.0:
+            print("w head")
             self.fc = torch.nn.Sequential(
                 torch.nn.Dropout(p=dropout_rate),
                 torch.nn.Linear(hidden_size, hidden_size),
@@ -41,6 +46,7 @@ class HFVitModel(nn.Module):
                 torch.nn.Linear(hidden_size, 384),
             )
         else:
+            print("wo head")
             self.fc = torch.nn.Linear(hidden_size, 384)
 
     def forward(self, x):
@@ -87,6 +93,7 @@ def train(
     image_mean,
     image_std,
     activation,
+    hidden_size,
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dataloaders = get_dataloaders(
@@ -100,17 +107,25 @@ def train(
     )
 
     if use_hf_model:
-        model = HFVitModel(model_name, dropout_rate=dropout_rate, activation=activation)
+        model = HFVitModel(
+            model_name,
+            hidden_size=hidden_size,
+            dropout_rate=dropout_rate,
+            activation=activation,
+        )
     else:
         model = timm.create_model(model_name, pretrained=True, num_classes=384)
         if dropout_rate > 0.0:
-            print("apply dropout", dropout_rate)
+            print("w head", dropout_rate)
             model.haed = torch.nn.Sequential(
                 torch.nn.Dropout(p=dropout_rate),
                 torch.nn.Linear(model.head.in_features, model.head.in_features),
                 torch.nn.ReLU() if activation == "relu" else torch.nn.GELU(),
                 torch.nn.Linear(model.head.in_features, 384),
             )
+        else:
+            print("wo head")
+
         model.set_grad_checkpointing()
 
     model.to(device)
@@ -246,21 +261,28 @@ if __name__ == "__main__":
     class Config(BaseModel):
         seed: int = 42
 
-        memo = "on_v5_aug_2fc_1e5"
+        memo = "on_v6_w_head"
         model_name: str = "vit_huge_patch14_224_clip_laion2b"
+        hidden_size = -1
 
         #: True로 설정시 laion/CLIP-ViT-H-14-laion2B-s32B-b79K 와 같은 허깅페이스 호환모델 전달
-        use_hf_model: bool = True
+        use_hf_model: bool = False
         if use_hf_model:
-            model_name = "openai/clip-vit-large-patch14-336"  # laion/CLIP-ViT-H-14-laion2B-s32B-b79K
-        image_size: Tuple[int, int] = (336, 336)
-        image_mean = [0.48145466, 0.4578275, 0.40821073]
-        image_std = [0.26862954, 0.26130258, 0.27577711]
-        batch_size: int = 128
+            model_name = "facebook/convnextv2-huge-22k-384"
+            hidden_size = 2816
+
+        # image_size: Tuple[int, int] = (384, 384)
+        image_size: Tuple[int, int] = (224, 224)
+
+        # swin & convnextv2 & timm
+        image_mean = [0.485, 0.456, 0.406]
+        image_std = [0.229, 0.224, 0.225]
+
+        batch_size: int = 256
         num_epochs: int = 5
-        lr: float = 1e-5  # large: 1e-4, huge: 1e-5
+        lr: float = 1e-4
         lr_scaling_factor: Optional[float] = None
-        dropout_rate: float = -0.1
+        dropout_rate: float = 0.1  # head 유무를 > 0.0로 판단
         scheduler: str = "CosineAnnealingLR"
         warmup_steps: int = 200
         use_aug: bool = True
@@ -271,8 +293,8 @@ if __name__ == "__main__":
         train_metadata_file: str = "metadata.jsonl"
         valid_metadata_file: str = "metadata.jsonl"
 
-        train_dir: str = "./diffusion/image-to-prompt-train-valid-split-v5/train"
-        valid_dir: str = "./diffusion/image-to-prompt-train-valid-split-v5/validation"
+        train_dir: str = "./diffusion/image-to-prompt-train-valid-split-v6/train"
+        valid_dir: str = "./diffusion/image-to-prompt-train-valid-split-v6/validation"
 
     config = Config()
 
@@ -340,4 +362,5 @@ if __name__ == "__main__":
         config.image_mean,
         config.image_std,
         config.activation,
+        config.hidden_size,
     )

@@ -158,7 +158,8 @@ def preprocess(text: str) -> Optional[str]:
                 text = text[:-1]
 
     # [순서 중요] by 부터 가장 가까운 콤마까지 빈칸 치환
-    text = re.sub(r"\bby\b.*?,", "", text)
+    if by_fp_pattern not in text:
+        text = re.sub(r"\bby\b.*?,", "", text)
 
     # 추가 스탑워드 패턴 제거
     # todo: station art trending on artstation by art station at his art station
@@ -240,15 +241,15 @@ def preprocess(text: str) -> Optional[str]:
 
 
 if __name__ == "__main__":
-    prefix = "gpt2_"
-    # input_path = "./diffusion/sd2gpt2/prompts.txt"
-    # output_path = "./diffusion/sd2gpt2/images/metadata.jsonl"
-    # image_dir_path = "./diffusion/sd2gpt2/images"
+    prefix = "dbd2_"
+    input_path = "./resources/prompts_dbd_prpr-self-split-wt-wv-dedup.txt"
+    output_path = "./diffusion/dbd/metadata.jsonl"
+    image_dir_path = "./diffusion/dbd"
 
     #: TODO 임시
-    input_path = "./diffusion/900k_dedup_08_split_dedup_wt_wv.txt"
-    output_path = "./diffusion/tmp.txt"
-    image_dir_path = None
+    # input_path = "./resources/900k_dedup_08_split_dedup_wt_wv.txt"
+    # output_path = "./resources/tmp.txt"
+    # image_dir_path = None
 
     skip_cnt = 0
 

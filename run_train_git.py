@@ -89,12 +89,12 @@ if __name__ == "__main__":
     batch_size = 32
     grad_accum_steps = 16
     valid_batch_size = 32
-    learning_rate = 2.5e-6
+    learning_rate = 2.5e-5
     valid_steps = 100
     warmup_ratio = 0.05
     use_amp = True
     seed = 42
-    memo = f"git-model-{seed}s-{epochs}ep-{model_name}"
+    memo = f"git-model-{seed}s-{epochs}ep-{model_name}-on-v6"
 
     wandb.init(
         name=memo,
@@ -119,13 +119,13 @@ if __name__ == "__main__":
     # https://huggingface.co/docs/datasets/image_dataset
     train_dataset = load_dataset(
         "imagefolder",
-        data_dir="./diffusion/image-to-prompt-train-valid-split-v5",
+        data_dir="./diffusion/image-to-prompt-train-valid-split-v6",
         split="train",
         num_proc=8,
     )
     valid_dataset = load_dataset(
         "imagefolder",
-        data_dir="./diffusion/image-to-prompt-train-valid-split-v5",
+        data_dir="./diffusion/image-to-prompt-train-valid-split-v6",
         split="validation",
         num_proc=8,
     )
@@ -140,6 +140,7 @@ if __name__ == "__main__":
     valid_dataloader = DataLoader(valid_dataset, shuffle=True, batch_size=batch_size)
 
     model = AutoModelForCausalLM.from_pretrained(model_name)
+
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)
@@ -167,8 +168,9 @@ if __name__ == "__main__":
                 outputs = model(
                     input_ids=input_ids, pixel_values=pixel_values, labels=input_ids
                 )
-                loss = outputs.loss
-                loss /= grad_accum_steps
+
+            loss = outputs.loss
+            loss /= grad_accum_steps
 
             logging_loss += loss.detach()
 

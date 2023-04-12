@@ -142,11 +142,10 @@ def preprocess(text: str) -> Optional[str]:
                 text = text[:-1]
 
     # [순서 중요] by 뒤에 (and 개수 + by 개수) 두개 이상 등장
-    if by_pattern in text:
+    if by_pattern in text and by_fp_pattern not in text:
         index = text.index(by_pattern)
         if (
             by_pattern in text
-            and by_fp_pattern not in text
             and (
                 text[index + 2 :].count(and_pattern)
                 + text[index + 2 :].count(by_pattern)
@@ -241,10 +240,10 @@ def preprocess(text: str) -> Optional[str]:
 
 
 if __name__ == "__main__":
-    prefix = "dbd2_"
-    input_path = "./resources/prompts_dbd_prpr-self-split-wt-wv-dedup.txt"
-    output_path = "./diffusion/dbd/metadata.jsonl"
-    image_dir_path = "./diffusion/dbd"
+    prefix = "chatgpt_0330_"
+    input_path = "./resources/prompts_chatgpt_0330_dedup.txt"
+    output_path = "./diffusion/chatgpt-images/metadata.jsonl"
+    image_dir_path = "./diffusion/chatgpt-images"
 
     #: TODO 임시
     # input_path = "./resources/900k_dedup_08_split_dedup_wt_wv.txt"

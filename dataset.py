@@ -15,7 +15,6 @@ def get_transformation_for_train(image_size) -> A.Compose:
     """
     transform = A.Compose(
         [
-            A.HorizontalFlip(p=0.5),
             A.ImageCompression(quality_lower=99, quality_upper=100),
             A.RandomBrightnessContrast(brightness_limit=0.1, contrast_limit=0.1, p=0.5),
             A.ShiftScaleRotate(

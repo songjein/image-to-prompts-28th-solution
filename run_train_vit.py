@@ -25,7 +25,12 @@ warnings.filterwarnings("ignore")
 
 class HFVitModel(nn.Module):
     def __init__(
-        self, model_path_or_name, hidden_size=1024, dropout_rate=0.1, activation="relu"
+        self,
+        model_path_or_name,
+        hidden_size=1024,
+        dropout_rate=0.1,
+        activation="relu",
+        use_layernorm=False,
     ):
         super(HFVitModel, self).__init__()
 
@@ -38,13 +43,22 @@ class HFVitModel(nn.Module):
             self.vision.gradient_checkpointing_enable()
 
         if dropout_rate > 0.0:
-            print("w head")
-            self.fc = torch.nn.Sequential(
-                torch.nn.Dropout(p=dropout_rate),
-                torch.nn.Linear(hidden_size, hidden_size),
-                torch.nn.ReLU() if activation == "relu" else torch.nn.GELU(),
-                torch.nn.Linear(hidden_size, 384),
-            )
+            print("w head", dropout_rate, "use layernorm", use_layernorm)
+            if use_layernorm:
+                self.fc = torch.nn.Sequential(
+                    torch.nn.Dropout(p=dropout_rate),
+                    torch.nn.Linear(hidden_size, hidden_size),
+                    torch.nn.ReLU() if activation == "relu" else torch.nn.GELU(),
+                    torch.nn.Linear(hidden_size, 384),
+                    torch.nn.LayerNorm(384),
+                )
+            else:
+                self.fc = torch.nn.Sequential(
+                    torch.nn.Dropout(p=dropout_rate),
+                    torch.nn.Linear(hidden_size, hidden_size),
+                    torch.nn.ReLU() if activation == "relu" else torch.nn.GELU(),
+                    torch.nn.Linear(hidden_size, 384),
+                )
         else:
             print("wo head")
             self.fc = torch.nn.Linear(hidden_size, 384)
@@ -94,6 +108,7 @@ def train(
     image_std,
     activation,
     hidden_size,
+    use_layernorm=False,
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dataloaders = get_dataloaders(
@@ -112,17 +127,27 @@ def train(
             hidden_size=hidden_size,
             dropout_rate=dropout_rate,
             activation=activation,
+            use_layernorm=use_layernorm,
         )
     else:
         model = timm.create_model(model_name, pretrained=True, num_classes=384)
         if dropout_rate > 0.0:
-            print("w head", dropout_rate)
-            model.haed = torch.nn.Sequential(
-                torch.nn.Dropout(p=dropout_rate),
-                torch.nn.Linear(model.head.in_features, model.head.in_features),
-                torch.nn.ReLU() if activation == "relu" else torch.nn.GELU(),
-                torch.nn.Linear(model.head.in_features, 384),
-            )
+            print("w head", dropout_rate, "use layernorm", use_layernorm)
+            if use_layernorm:
+                model.haed = torch.nn.Sequential(
+                    torch.nn.Dropout(p=dropout_rate),
+                    torch.nn.Linear(model.head.in_features, model.head.in_features),
+                    torch.nn.ReLU() if activation == "relu" else torch.nn.GELU(),
+                    torch.nn.Linear(model.head.in_features, 384),
+                    torch.nn.LayerNorm(384),
+                )
+            else:
+                model.haed = torch.nn.Sequential(
+                    torch.nn.Dropout(p=dropout_rate),
+                    torch.nn.Linear(model.head.in_features, model.head.in_features),
+                    torch.nn.ReLU() if activation == "relu" else torch.nn.GELU(),
+                    torch.nn.Linear(model.head.in_features, 384),
+                )
         else:
             print("wo head")
 
@@ -261,33 +286,42 @@ if __name__ == "__main__":
     class Config(BaseModel):
         seed: int = 42
 
-        memo = "on_v6_w_head"
-        model_name: str = "vit_huge_patch14_224_clip_laion2b"
-        hidden_size = -1
+        memo = "on_v6_w_head_lnorm_mean_std_fix"
+        model_name: str = "vit_large_patch14_224_clip_laion2b"
 
         #: True로 설정시 laion/CLIP-ViT-H-14-laion2B-s32B-b79K 와 같은 허깅페이스 호환모델 전달
-        use_hf_model: bool = False
+        use_hf_model: bool = not True
         if use_hf_model:
-            model_name = "facebook/convnextv2-huge-22k-384"
-            hidden_size = 2816
+            model_name = "microsoft/swin-large-patch4-window12-384-in22k"  # "facebook/convnextv2-huge-22k-384" or 512
+
+        hidden_size = -1  # -1
 
         # image_size: Tuple[int, int] = (384, 384)
         image_size: Tuple[int, int] = (224, 224)
 
-        # swin & convnextv2 & timm
+        # swin & convnextv2
         image_mean = [0.485, 0.456, 0.406]
         image_std = [0.229, 0.224, 0.225]
+
+        if model_name == "vit_large_patch14_224_clip_laion2b":
+            image_mean = [0.5, 0.5, 0.5]
+            image_std = [0.5, 0.5, 0.5]
+
+        elif model_name == "vit_huge_patch14_224_clip_laion2b":
+            image_mean = [0.48145466, 0.4578275, 0.40821073]
+            image_std = [0.26862954, 0.26130258, 0.27577711]
 
         batch_size: int = 256
         num_epochs: int = 5
         lr: float = 1e-4
         lr_scaling_factor: Optional[float] = None
-        dropout_rate: float = 0.1  # head 유무를 > 0.0로 판단
+        dropout_rate: float = -0.1  # head 유무를 > 0.0로 판단
         scheduler: str = "CosineAnnealingLR"
         warmup_steps: int = 200
         use_aug: bool = True
         use_amp: bool = True
-        activation = "gelu"
+        activation: str = "gelu"
+        use_layernorm: bool = True
 
         output_path: str = f"{model_name.replace('/', '-')}_{memo}"
         train_metadata_file: str = "metadata.jsonl"
@@ -363,4 +397,5 @@ if __name__ == "__main__":
         config.image_std,
         config.activation,
         config.hidden_size,
+        config.use_layernorm,
     )

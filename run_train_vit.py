@@ -2,6 +2,7 @@ import json
 import os
 import random
 import shutil
+import sys
 import warnings
 from typing import Dict, List, Optional, Tuple
 
@@ -14,6 +15,7 @@ from scipy import spatial
 from timm.utils import AverageMeter
 from torch import nn
 from torch.cuda.amp import GradScaler, autocast
+from torch.nn.utils import clip_grad_norm_
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from tqdm import tqdm
 from transformers import AutoModel, get_cosine_schedule_with_warmup
@@ -34,7 +36,7 @@ class HFVitModel(nn.Module):
     ):
         super(HFVitModel, self).__init__()
 
-        if "vit" in model_path_or_name and "clip" in model_path_or_name:
+        if "vit" in model_path_or_name.lower() and "clip" in model_path_or_name.lower():
             clip = AutoModel.from_pretrained(model_path_or_name)
             clip.gradient_checkpointing_enable()
             self.vision = clip.vision_model
@@ -94,6 +96,7 @@ def train(
     model_name,
     image_size,
     batch_size,
+    grad_accum_steps,
     num_epochs,
     lr,
     lr_scaling_factor,
@@ -114,7 +117,13 @@ def train(
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dataloaders = get_dataloaders(
-        train_df, valid_df, image_size, batch_size, use_aug, image_mean, image_std,
+        train_df,
+        valid_df,
+        image_size,
+        batch_size,
+        use_aug,
+        image_mean,
+        image_std,
     )
 
     if use_hf_model:
@@ -153,19 +162,12 @@ def train(
     fp_log = open(os.path.join(output_path, "logs.txt"), "w", encoding="utf-8")
 
     if lr_scaling_factor is not None:
-        lr_dict = dict()
-        for name, _ in model.named_parameters():
-            if "head" in name:
-                lr_dict["head"] = lr
-            else:
-                lr_dict["backbone"] = lr * lr_scaling_factor
-
         optimizer_params = [
             {
                 "params": [
                     param for name, param in model.named_parameters() if "head" in name
                 ],
-                "lr": lr_dict["head"],
+                "lr": lr,
             },
             {
                 "params": [
@@ -173,12 +175,29 @@ def train(
                     for name, param in model.named_parameters()
                     if "head" not in name
                 ],
-                "lr": lr_dict["backbone"],
+                "lr": lr * lr_scaling_factor,
             },
         ]
-        optimizer = torch.optim.AdamW(optimizer_params)
+
+        if scheduler == "MultiStepLR":
+            optimizer = torch.optim.SGD(
+                optimizer_params,
+                lr=lr,
+                momentum=0.9,
+                weight_decay=weight_decay,
+            )
+        else:
+            optimizer = torch.optim.AdamW(optimizer_params)
     else:
-        optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+        if scheduler == "MultiStepLR":
+            optimizer = torch.optim.SGD(
+                filter(lambda p: p.requires_grad, model.parameters()),
+                lr=lr,
+                momentum=0.9,
+                weight_decay=weight_decay,
+            )
+        else:
+            optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
 
     if scheduler == "CosineAnnealingLR":
         scheduler = CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=1e-6)
@@ -194,13 +213,7 @@ def train(
         )
         print("set cosine scheduler with warmup lr scheduler")
         fp_log.write("set cosine scheduler with warmup lr scheduler\n")
-    elif scheduler == "SGD":
-        # NOTE for laion/CLIP-ViT-H-14-laion2B-s32B-b79K
-        optimizer = torch.optim.SGD(
-            filter(lambda p: p.requires_grad, model.parameters()),
-            lr=lr,
-            weight_decay=weight_decay,
-        )
+    elif scheduler == "MultiStepLR":
         scheduler = torch.optim.lr_scheduler.MultiStepLR(
             optimizer, milestones, gamma=0.1, last_epoch=-1, verbose=False
         )
@@ -213,13 +226,18 @@ def train(
 
     best_score = -1.0
 
+    logging_loss = torch.tensor(0.0).cuda()
+    step, accumulated_steps = 0, 0
     for epoch in range(num_epochs):
         train_meters = {
             "loss": AverageMeter(),
             "cos": AverageMeter(),
         }
         model.train()
-        for X, y in tqdm(dataloaders["train"]):
+
+        data_loader_tqdm = tqdm(dataloaders["train"], file=sys.stdout)
+        for X, y in data_loader_tqdm:
+            accumulated_steps += 1
             X, y = X.to(device), y.to(device)
 
             optimizer.zero_grad()
@@ -229,17 +247,33 @@ def train(
                 target = torch.ones(X.size(0)).to(device)
                 loss = criterion(X_out, y, target)
 
+            loss /= grad_accum_steps
+            logging_loss += loss.detach()
+
             scaler.scale(loss).backward()
+
+            if accumulated_steps < grad_accum_steps:
+                continue
+
+            accumulated_steps = 0
+            step += 1
+
+            scaler.unscale_(optimizer)
+            clip_grad_norm_(model.parameters(), max_norm=1.0)
             scaler.step(optimizer)
             scaler.update()
 
-            trn_loss = loss.item()
-            trn_cos = cosine_similarity(
-                X_out.detach().cpu().numpy(), y.detach().cpu().numpy()
-            )
+            if step > 0 and step % 10 == 0:
+                mean_loss = logging_loss / 10
+                mean_loss = mean_loss.item()
+                trn_cos = cosine_similarity(
+                    X_out.detach().cpu().numpy(), y.detach().cpu().numpy()
+                )
+                data_loader_tqdm.set_description(f"Epoch {epoch}, loss: {mean_loss}")
 
-            train_meters["loss"].update(trn_loss, n=X.size(0))
-            train_meters["cos"].update(trn_cos, n=X.size(0))
+                train_meters["loss"].update(mean_loss, n=X.size(0))
+                train_meters["cos"].update(trn_cos, n=X.size(0))
+                logging_loss = torch.tensor(0.0).cuda()
 
         scheduler.step()
 
@@ -297,12 +331,11 @@ if __name__ == "__main__":
         memo = "on_v6"
         model_name: str = "vit_huge_patch14_224_clip_laion2b"
 
-        #: True로 설정시 laion/CLIP-ViT-H-14-laion2B-s32B-b79K 와 같은 허깅페이스 호환모델 전달
-        use_hf_model: bool = False # True
+        use_hf_model: bool = True
         if use_hf_model:
             model_name = "laion/CLIP-ViT-H-14-laion2B-s32B-b79K"  # "microsoft/swin-large-patch4-window12-384-in22k"  # "facebook/convnextv2-huge-22k-384" or 512
 
-        hidden_size = 1024  # -1
+        hidden_size = 1280
 
         # image_size: Tuple[int, int] = (384, 384)
         image_size: Tuple[int, int] = (224, 224)
@@ -322,22 +355,23 @@ if __name__ == "__main__":
             image_mean = [0.48145466, 0.4578275, 0.40821073]
             image_std = [0.26862954, 0.26130258, 0.27577711]
 
-        batch_size: int = 256
-        num_epochs: int = 6
-        lr: float = 0.02  # 1e-4
-        lr_scaling_factor: Optional[float] = None
-        dropout_rate: float = 0.1  # head 유무를 > 0.0로 판단
-        scheduler: str = "SGD"
-        warmup_steps: int = 200
-        use_aug: bool = True
-        use_amp: bool = True
+        #: head 유무를 dropout rate > 0.0로 판단
+        dropout_rate: float = 0.2
         activation: str = "gelu"
-        use_layernorm: bool = True
+        use_layernorm: bool = False
 
+        batch_size: int = 256
+        grad_accum_steps = 1
+        num_epochs: int = 6
+        lr: float = 0.02
+        lr_scaling_factor: Optional[float] = 0.1
+        scheduler: str = "MultiStepLR"
         weight_decay = 1e-4
         milestones = [num_epochs // 3, 2 * num_epochs // 3]
+        warmup_steps: int = 200
 
-        # TODO: accum
+        use_aug: bool = True
+        use_amp: bool = True
 
         output_path: str = f"{model_name.replace('/', '-')}_{memo}"
         train_metadata_file: str = "metadata.jsonl"
@@ -348,7 +382,11 @@ if __name__ == "__main__":
 
     config = Config()
 
-    assert config.scheduler in ["CosineSchedulerWithWarmup", "CosineAnnealingLR", "SGD"]
+    assert config.scheduler in [
+        "CosineSchedulerWithWarmup",
+        "CosineAnnealingLR",
+        "MultiStepLR",
+    ]
 
     seed_everything(config.seed)
 
@@ -399,6 +437,7 @@ if __name__ == "__main__":
         config.model_name,
         config.image_size,
         config.batch_size,
+        config.grad_accum_steps,
         config.num_epochs,
         config.lr,
         config.lr_scaling_factor,

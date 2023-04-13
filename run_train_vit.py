@@ -109,16 +109,12 @@ def train(
     activation,
     hidden_size,
     use_layernorm=False,
+    weight_decay=1e-4,
+    milestones=[],
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dataloaders = get_dataloaders(
-        train_df,
-        valid_df,
-        image_size,
-        batch_size,
-        use_aug,
-        image_mean,
-        image_std,
+        train_df, valid_df, image_size, batch_size, use_aug, image_mean, image_std,
     )
 
     if use_hf_model:
@@ -198,6 +194,18 @@ def train(
         )
         print("set cosine scheduler with warmup lr scheduler")
         fp_log.write("set cosine scheduler with warmup lr scheduler\n")
+    elif scheduler == "SGD":
+        # NOTE for laion/CLIP-ViT-H-14-laion2B-s32B-b79K
+        optimizer = torch.optim.SGD(
+            filter(lambda p: p.requires_grad, model.parameters()),
+            lr=lr,
+            weight_decay=weight_decay,
+        )
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(
+            optimizer, milestones, gamma=0.1, last_epoch=-1, verbose=False
+        )
+    else:
+        raise Exception("Invalid scheduler")
 
     criterion = nn.CosineEmbeddingLoss()
 
@@ -286,15 +294,15 @@ if __name__ == "__main__":
     class Config(BaseModel):
         seed: int = 42
 
-        memo = "on_v6_w_head_lnorm_mean_std_fix"
-        model_name: str = "vit_large_patch14_224_clip_laion2b"
+        memo = "on_v6"
+        model_name: str = "vit_huge_patch14_224_clip_laion2b"
 
         #: True로 설정시 laion/CLIP-ViT-H-14-laion2B-s32B-b79K 와 같은 허깅페이스 호환모델 전달
-        use_hf_model: bool = not True
+        use_hf_model: bool = False # True
         if use_hf_model:
-            model_name = "microsoft/swin-large-patch4-window12-384-in22k"  # "facebook/convnextv2-huge-22k-384" or 512
+            model_name = "laion/CLIP-ViT-H-14-laion2B-s32B-b79K"  # "microsoft/swin-large-patch4-window12-384-in22k"  # "facebook/convnextv2-huge-22k-384" or 512
 
-        hidden_size = -1  # -1
+        hidden_size = 1024  # -1
 
         # image_size: Tuple[int, int] = (384, 384)
         image_size: Tuple[int, int] = (224, 224)
@@ -307,21 +315,29 @@ if __name__ == "__main__":
             image_mean = [0.5, 0.5, 0.5]
             image_std = [0.5, 0.5, 0.5]
 
-        elif model_name == "vit_huge_patch14_224_clip_laion2b":
+        elif (
+            model_name == "vit_huge_patch14_224_clip_laion2b"
+            or model_name == "laion/CLIP-ViT-H-14-laion2B-s32B-b79K"
+        ):
             image_mean = [0.48145466, 0.4578275, 0.40821073]
             image_std = [0.26862954, 0.26130258, 0.27577711]
 
         batch_size: int = 256
-        num_epochs: int = 5
-        lr: float = 1e-4
+        num_epochs: int = 6
+        lr: float = 0.02  # 1e-4
         lr_scaling_factor: Optional[float] = None
-        dropout_rate: float = -0.1  # head 유무를 > 0.0로 판단
-        scheduler: str = "CosineAnnealingLR"
+        dropout_rate: float = 0.1  # head 유무를 > 0.0로 판단
+        scheduler: str = "SGD"
         warmup_steps: int = 200
         use_aug: bool = True
         use_amp: bool = True
         activation: str = "gelu"
         use_layernorm: bool = True
+
+        weight_decay = 1e-4
+        milestones = [num_epochs // 3, 2 * num_epochs // 3]
+
+        # TODO: accum
 
         output_path: str = f"{model_name.replace('/', '-')}_{memo}"
         train_metadata_file: str = "metadata.jsonl"
@@ -332,7 +348,7 @@ if __name__ == "__main__":
 
     config = Config()
 
-    assert config.scheduler in ["CosineSchedulerWithWarmup", "CosineAnnealingLR"]
+    assert config.scheduler in ["CosineSchedulerWithWarmup", "CosineAnnealingLR", "SGD"]
 
     seed_everything(config.seed)
 
@@ -398,4 +414,6 @@ if __name__ == "__main__":
         config.activation,
         config.hidden_size,
         config.use_layernorm,
+        config.weight_decay,
+        config.milestones,
     )

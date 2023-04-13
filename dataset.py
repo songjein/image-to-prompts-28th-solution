@@ -65,7 +65,7 @@ class DiffusionDataset(Dataset):
         image = cv2.imread(row["filepath"])
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        if self.transform:
+        if self.transform_w_haug and self.transform_wo_haug:
             if "left" not in prompt.lower() and "right" not in prompt.lower():
                 image = self.transform_w_haug(image=image)["image"]
             else:

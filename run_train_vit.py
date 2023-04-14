@@ -25,6 +25,51 @@ from dataset import get_dataloaders
 warnings.filterwarnings("ignore")
 
 
+class LayerwiseDecayAdamW(torch.optim.Optimizer):
+    def __init__(
+        self,
+        model,
+        base_lr,
+        min_lr=1e-6,
+        backbone_weight_decay=1e-3,
+        head_weight_decay=1e-5,
+        head_lr_factor=10.0,
+    ):
+        params = []
+
+        layers = [model.vision.embeddings] + list(model.vision.encoder.layers)
+        learning_rates = np.linspace(base_lr, min_lr, len(layers))
+        for idx, layer in enumerate(reversed(layers)):
+            lr = learning_rates[idx]
+            params += [
+                {
+                    "params": layer.parameters(),
+                    "lr": lr,
+                    "weight_decay": backbone_weight_decay,
+                }
+            ]
+
+        head_lr = base_lr * head_lr_factor
+        params += [
+            {
+                "params": model.fc.parameters(),
+                "lr": head_lr,
+                "weight_decay": head_weight_decay,
+            }
+        ]
+
+        super(LayerwiseDecayAdamW, self).__init__(
+            params, defaults=dict(weight_decay=backbone_weight_decay)
+        )
+        self._optimizer = torch.optim.AdamW(self.param_groups)
+
+    def step(self, closure=None):
+        return self._optimizer.step(closure=closure)
+
+    def zero_grad(self, set_to_none=False):
+        return self._optimizer.zero_grad(set_to_none=set_to_none)
+
+
 class HFVitModel(nn.Module):
     def __init__(
         self,
@@ -43,6 +88,10 @@ class HFVitModel(nn.Module):
         else:
             self.vision = AutoModel.from_pretrained(model_path_or_name)
             self.vision.gradient_checkpointing_enable()
+
+        # NOTE: temp
+        # for param in self.vision.parameters():
+        #     param.requires_grad = False
 
         if dropout_rate > 0.0:
             print("w head", dropout_rate, "use layernorm", use_layernorm)
@@ -99,10 +148,10 @@ def train(
     grad_accum_steps,
     num_epochs,
     lr,
-    lr_scaling_factor,
+    use_layerwise_lr_decay,
     dropout_rate,
     output_path,
-    scheduler,
+    scheduler_type,
     warmup_steps,
     use_aug,
     use_amp,
@@ -134,8 +183,16 @@ def train(
             activation=activation,
             use_layernorm=use_layernorm,
         )
+
+        # NOTE: temp
+        # model.load_state_dict(
+        #     torch.load(
+        #         "./laion-CLIP-ViT-H-14-laion2B-s32B-b79K_on_v6_FT_1/laion-CLIP-ViT-H-14-laion2B-s32B-b79K_best.pth"
+        #     )
+        # )
     else:
         model = timm.create_model(model_name, pretrained=True, num_classes=384)
+
         if dropout_rate > 0.0:
             print("w head", dropout_rate, "use layernorm", use_layernorm)
             if use_layernorm:
@@ -161,35 +218,17 @@ def train(
     model.to(device)
     fp_log = open(os.path.join(output_path, "logs.txt"), "w", encoding="utf-8")
 
-    if lr_scaling_factor is not None:
-        optimizer_params = [
-            {
-                "params": [
-                    param for name, param in model.named_parameters() if "head" in name
-                ],
-                "lr": lr,
-            },
-            {
-                "params": [
-                    param
-                    for name, param in model.named_parameters()
-                    if "head" not in name
-                ],
-                "lr": lr * lr_scaling_factor,
-            },
-        ]
-
-        if scheduler == "MultiStepLR":
-            optimizer = torch.optim.SGD(
-                optimizer_params,
-                lr=lr,
-                momentum=0.9,
-                weight_decay=weight_decay,
-            )
+    if use_layerwise_lr_decay:
+        if scheduler_type == "MultiStepLR":
+            raise Exception("MultiStepLR은 layerwise lr decay 구현 안되어 있음")
         else:
-            optimizer = torch.optim.AdamW(optimizer_params)
+            optimizer = LayerwiseDecayAdamW(
+                model,
+                base_lr=lr,
+            )
+            print("Layerwise LR Decay with AdamW")
     else:
-        if scheduler == "MultiStepLR":
+        if scheduler_type == "MultiStepLR":
             optimizer = torch.optim.SGD(
                 filter(lambda p: p.requires_grad, model.parameters()),
                 lr=lr,
@@ -199,12 +238,12 @@ def train(
         else:
             optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
 
-    if scheduler == "CosineAnnealingLR":
+    if scheduler_type == "CosineAnnealingLR":
         scheduler = CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=1e-6)
         print("set cosine annealing lr scheduler")
         fp_log.write("set cosine annealing lr scheduler\n")
-    elif scheduler == "CosineSchedulerWithWarmup":
-        steps_per_epoch = len(dataloaders["train"])
+    elif scheduler_type == "CosineSchedulerWithWarmup":
+        steps_per_epoch = len(dataloaders["train"]) // grad_accum_steps
         num_training_steps = num_epochs * steps_per_epoch
         scheduler = get_cosine_schedule_with_warmup(
             optimizer,
@@ -213,7 +252,7 @@ def train(
         )
         print("set cosine scheduler with warmup lr scheduler")
         fp_log.write("set cosine scheduler with warmup lr scheduler\n")
-    elif scheduler == "MultiStepLR":
+    elif scheduler_type == "MultiStepLR":
         scheduler = torch.optim.lr_scheduler.MultiStepLR(
             optimizer, milestones, gamma=0.1, last_epoch=-1, verbose=False
         )
@@ -263,6 +302,9 @@ def train(
             scaler.step(optimizer)
             scaler.update()
 
+            if scheduler_type not in ["MultiStepLR", "CosineAnnealingLR"]:
+                scheduler.step()
+
             if step > 0 and step % 10 == 0:
                 mean_loss = logging_loss / 10
                 mean_loss = mean_loss.item()
@@ -275,7 +317,8 @@ def train(
                 train_meters["cos"].update(trn_cos, n=X.size(0))
                 logging_loss = torch.tensor(0.0).cuda()
 
-        scheduler.step()
+        if scheduler_type in ["MultiStepLR", "CosineAnnealingLR"]:
+            scheduler.step()
 
         log = "Epoch {:d} / trn/loss={:.4f}, trn/cos={:.4f}".format(
             epoch + 1, train_meters["loss"].avg, train_meters["cos"].avg
@@ -328,17 +371,17 @@ if __name__ == "__main__":
     class Config(BaseModel):
         seed: int = 42
 
-        memo = "on_v6"
+        memo = "on_v6_w_adam"
         model_name: str = "vit_huge_patch14_224_clip_laion2b"
 
         use_hf_model: bool = True
         if use_hf_model:
-            model_name = "laion/CLIP-ViT-H-14-laion2B-s32B-b79K"  # "microsoft/swin-large-patch4-window12-384-in22k"  # "facebook/convnextv2-huge-22k-384" or 512
+            model_name = "microsoft/swin-large-patch4-window12-384-in22k"  # "microsoft/swin-large-patch4-window12-384-in22k"  # "facebook/convnextv2-huge-22k-384" or 512
 
-        hidden_size = 1280
+        hidden_size = 1536  # 1280
 
-        # image_size: Tuple[int, int] = (384, 384)
-        image_size: Tuple[int, int] = (224, 224)
+        image_size: Tuple[int, int] = (384, 384)
+        # image_size: Tuple[int, int] = (224, 224)
 
         # swin & convnextv2
         image_mean = [0.485, 0.456, 0.406]
@@ -356,18 +399,18 @@ if __name__ == "__main__":
             image_std = [0.26862954, 0.26130258, 0.27577711]
 
         #: head 유무를 dropout rate > 0.0로 판단
-        dropout_rate: float = 0.2
+        dropout_rate: float = 0.1
         activation: str = "gelu"
         use_layernorm: bool = False
 
-        batch_size: int = 256
-        grad_accum_steps = 1
-        num_epochs: int = 6
-        lr: float = 0.02
-        lr_scaling_factor: Optional[float] = 0.1
-        scheduler: str = "MultiStepLR"
-        weight_decay = 1e-4
-        milestones = [num_epochs // 3, 2 * num_epochs // 3]
+        batch_size: int = 32
+        grad_accum_steps = 8
+        num_epochs: int = 5
+        lr: float = 1e-4
+        use_layerwise_lr_decay: bool = True
+        scheduler_type: str = "CosineSchedulerWithWarmup"
+        weight_decay = 1e-4  # SGD용
+        milestones = [num_epochs // 3, 2 * num_epochs // 3]  # MultiStepLR용
         warmup_steps: int = 200
 
         use_aug: bool = True
@@ -382,7 +425,7 @@ if __name__ == "__main__":
 
     config = Config()
 
-    assert config.scheduler in [
+    assert config.scheduler_type in [
         "CosineSchedulerWithWarmup",
         "CosineAnnealingLR",
         "MultiStepLR",
@@ -440,10 +483,10 @@ if __name__ == "__main__":
         config.grad_accum_steps,
         config.num_epochs,
         config.lr,
-        config.lr_scaling_factor,
+        config.use_layerwise_lr_decay,
         config.dropout_rate,
         config.output_path,
-        config.scheduler,
+        config.scheduler_type,
         config.warmup_steps,
         config.use_aug,
         config.use_amp,

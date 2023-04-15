@@ -16,12 +16,12 @@ def get_transformation_for_train(image_size) -> A.Compose:
     """
     transform = A.Compose(
         [
-            A.HorizontalFlip(p=0.5),
-            A.ImageCompression(quality_lower=99, quality_upper=100),
-            A.RandomBrightnessContrast(brightness_limit=0.1, contrast_limit=0.1, p=0.5),
-            A.ShiftScaleRotate(
-                shift_limit=0.1, scale_limit=0.2, rotate_limit=10, border_mode=0, p=0.5
-            ),
+            #A.HorizontalFlip(p=0.5),
+            #A.ImageCompression(quality_lower=99, quality_upper=100),
+            #A.RandomBrightnessContrast(brightness_limit=0.1, contrast_limit=0.1, p=0.5),
+            #A.ShiftScaleRotate(
+            #    shift_limit=0.1, scale_limit=0.2, rotate_limit=10, border_mode=0, p=0.5
+            #),
             A.Resize(image_size[0], image_size[1]),
             A.Cutout(
                 max_h_size=int(image_size[0] * 0.1),
@@ -40,6 +40,7 @@ class ImageTextDataset(Dataset):
         data,
         tokenizer,
         max_seq_length,
+        n_image_token,
         transform=None,
         image_size=(224, 224),
         root_path=None,
@@ -48,6 +49,7 @@ class ImageTextDataset(Dataset):
         self.data = data
         self.tokenizer = tokenizer
         self.max_seq_length = max_seq_length
+        self.n_image_token = n_image_token
         self.transform = transform
         self.image_size = image_size
         self.root_path = root_path
@@ -79,26 +81,42 @@ class ImageTextDataset(Dataset):
         pixel_values = torch.tensor(image, dtype=torch.float)
 
         # Load and preprocess the text
-        # [<IMG>, prompt_texet, EOS]
+        # [<IMG> * n_image_token, prompt_texet, EOS]
         text = row["text"]
         inputs = self.tokenizer(
-            text, truncation=True, max_length=self.max_seq_length - 2
+            text,
+            truncation=True,
+            max_length=self.max_seq_length - 1 - self.n_image_token,
         )
-        input_ids = [self.image_token_id] + inputs["input_ids"] + [self.eos_token_id]
-        attention_mask = [1] + inputs["attention_mask"] + [1]
-        image_token_mask = [1] + [0] * (len(input_ids) - 1)
+        input_ids = [self.image_token_id] * self.n_image_token + inputs[
+            "input_ids"
+        ]  + [self.eos_token_id]
+        # attention_mask = [1] * self.n_image_token + inputs["attention_mask"]  # + [1]
+        image_token_mask = [1] * self.n_image_token + [0] * (
+            len(input_ids) - self.n_image_token
+        )
 
         # padding ids
         num_padded = self.max_seq_length - len(input_ids)
-        padded_input_ids = [self.pad_token_id] * num_padded + input_ids
-        padded_label_ids = [-100] * num_padded + input_ids
-        padded_attention_mask = [0] * num_padded + attention_mask
-        padded_image_token_mask = [0] * num_padded + image_token_mask
+        # left padding
+        # padded_input_ids = [self.pad_token_id] * num_padded + input_ids
+        # padded_label_ids = [-100] * (num_padded+ self.n_image_token) + input_ids[self.n_image_token:]
+        # padded_attention_mask = [0] * num_padded + attention_mask
+        # padded_image_token_mask = [0] * num_padded + image_token_mask
+        # right padding
+        padded_input_ids = input_ids + [self.pad_token_id] * num_padded
+        padded_label_ids = (
+            [-100] * (self.n_image_token)
+            + input_ids[self.n_image_token :]
+            + [-100] * num_padded
+        )
+        # padded_attention_mask = attention_mask + [0] * num_padded
+        padded_image_token_mask = image_token_mask + [0] * num_padded
 
         # Convert input_ids and attention_mask to tensors
         padded_input_ids = torch.tensor(padded_input_ids, dtype=torch.long)
         padded_label_ids = torch.tensor(padded_label_ids, dtype=torch.long)
-        padded_attention_mask = torch.tensor(padded_attention_mask, dtype=torch.long)
+        #padded_attention_mask = torch.tensor(padded_attention_mask, dtype=torch.long)
         padded_image_token_mask = torch.tensor(
             padded_image_token_mask, dtype=torch.long
         )
@@ -106,7 +124,8 @@ class ImageTextDataset(Dataset):
         return {
             "input_ids": padded_input_ids,
             "label_ids": padded_label_ids,
-            "attention_mask": padded_attention_mask,
+            # "attention_mask": padded_attention_mask,
             "image_token_mask": padded_image_token_mask,
             "pixel_values": pixel_values,
+            # "text": text,
         }

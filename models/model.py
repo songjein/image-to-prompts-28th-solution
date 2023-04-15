@@ -2,7 +2,7 @@ from typing import Dict
 
 import torch
 from torch import nn
-from transformers import CLIPVisionConfig, CLIPVisionModel, GPT2LMHeadModel
+from transformers import CLIPVisionConfig, CLIPVisionModel, GPT2LMHeadModel, SwinModel
 
 
 class VisionModel(nn.Module):
@@ -19,17 +19,35 @@ class VisionModel(nn.Module):
             out_features=out_features,
         )
 
+        #self.clip_projection = nn.Linear(
+        #    in_features=self.output_dimension,
+        #    out_features=384,
+        #)
+
         if frozen_backbone:
             for p in self.model.parameters():
                 p.required_grad = False
 
     def _create_model(self):
-        config = CLIPVisionConfig.from_pretrained(self.model_name)
-        model = CLIPVisionModel.from_pretrained(self.model_name, config=config)
+        #config = CLIPVisionConfig.from_pretrained(self.model_name)
+        model = SwinModel.from_pretrained(self.model_name)
         return model
 
     def _get_output_dimension(self):
         return self.model.config.hidden_size
+
+    '''
+    def get_clip_embedding(self, pixel_values):
+        batch_size = pixel_values.shape[0]
+        embeddings = self.model(pixel_values)
+
+        if not isinstance(embeddings, torch.Tensor):
+            embeddings = embeddings.pooler_output
+        embeddings = embeddings.reshape(batch_size, self.output_dimension)
+        embeddings = self.clip_projection(embeddings)
+
+        return embeddings
+    '''
 
     def forward(self, pixel_values: torch.tensor):
         batch_size = pixel_values.shape[0]
@@ -47,6 +65,8 @@ class VisionModel(nn.Module):
 class LanguageModel(GPT2LMHeadModel):
     def __init__(self, config):
         super(LanguageModel, self).__init__(config)
+
+        self.n_embd = self.config.n_embd
 
     def forward(
         self,
@@ -71,6 +91,8 @@ class LanguageModel(GPT2LMHeadModel):
         if image_token_embeddings is not None and image_token_mask is not None:
             inputs_embeds = self.transformer.wte(input_ids)
             ind = image_token_mask.nonzero(as_tuple=True)
+            # token 개수 만큼으로 reshape
+            image_token_embeddings = image_token_embeddings.reshape(-1, self.n_embd)
             inputs_embeds[ind] = image_token_embeddings.type(inputs_embeds.dtype)
             input_ids = None
 
@@ -100,12 +122,16 @@ class LanguageModel(GPT2LMHeadModel):
     ):
         # Project image embeddings to token embeddings
         if image_token_embeddings is not None:
+            batch_size = image_token_embeddings.shape[0]
             if input_ids is not None:
                 inputs_embeds = self.transformer.wte(input_ids)
-                inputs_embeds[:, 0] = image_token_embeddings.type(inputs_embeds.dtype)
+                image_token_embeddings = image_token_embeddings.reshape(batch_size, -1, self.n_embd)
+                #inputs_embeds[:, 0] = image_token_embeddings.type(inputs_embeds.dtype)
+                inputs_embeds = image_token_embeddings
                 input_ids = None
             else:
-                inputs_embeds = image_token_embeddings.unsqueeze(1)
+                image_token_embeddings = image_token_embeddings.reshape(batch_size, -1, self.n_embd)
+                inputs_embeds = image_token_embeddings
 
             input_ids = None
             return super().generate(

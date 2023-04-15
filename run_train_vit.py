@@ -371,29 +371,36 @@ if __name__ == "__main__":
     class Config(BaseModel):
         seed: int = 42
 
-        memo = "on_v6_w_adam"
+        # TODO: text로도 512b 3ep해봐야함
+
+        memo = "on_v6_w_orig_text_3ep"
         model_name: str = "vit_huge_patch14_224_clip_laion2b"
 
         use_hf_model: bool = True
         if use_hf_model:
-            model_name = "microsoft/swin-large-patch4-window12-384-in22k"  # "microsoft/swin-large-patch4-window12-384-in22k"  # "facebook/convnextv2-huge-22k-384" or 512
+            model_name = "laion/CLIP-ViT-H-14-laion2B-s32B-b79K"  # "facebook/convnextv2-huge-22k-384" or 512
 
-        hidden_size = 1536  # 1280
-
-        image_size: Tuple[int, int] = (384, 384)
-        # image_size: Tuple[int, int] = (224, 224)
-
-        # swin & convnextv2
+        hidden_size = 768
+        image_size: Tuple[int, int] = (224, 224)
         image_mean = [0.485, 0.456, 0.406]
         image_std = [0.229, 0.224, 0.225]
+
+        if model_name == "openai/clip-vit-large-patch14-336":
+            hidden_size = 1024
+            image_size = (336, 336)
+        elif model_name == "laion/CLIP-ViT-H-14-laion2B-s32B-b79K":
+            hidden_size = 1280
+        elif model_name == "microsoft/swin-large-patch4-window12-384-in22k":
+            hidden_size = 1536
+            image_size = (384, 384)
 
         if model_name == "vit_large_patch14_224_clip_laion2b":
             image_mean = [0.5, 0.5, 0.5]
             image_std = [0.5, 0.5, 0.5]
-
         elif (
             model_name == "vit_huge_patch14_224_clip_laion2b"
             or model_name == "laion/CLIP-ViT-H-14-laion2B-s32B-b79K"
+            or model_name == "openai/clip-vit-large-patch14-336"
         ):
             image_mean = [0.48145466, 0.4578275, 0.40821073]
             image_std = [0.26862954, 0.26130258, 0.27577711]
@@ -403,15 +410,17 @@ if __name__ == "__main__":
         activation: str = "gelu"
         use_layernorm: bool = False
 
-        batch_size: int = 32
-        grad_accum_steps = 8
-        num_epochs: int = 5
+        batch_size: int = 256
+        grad_accum_steps = 2
+        num_epochs: int = 3
         lr: float = 1e-4
         use_layerwise_lr_decay: bool = True
         scheduler_type: str = "CosineSchedulerWithWarmup"
         weight_decay = 1e-4  # SGD용
         milestones = [num_epochs // 3, 2 * num_epochs // 3]  # MultiStepLR용
         warmup_steps: int = 200
+
+        target_label_name = "orig_text"  # text or orig_text
 
         use_aug: bool = True
         use_amp: bool = True
@@ -456,7 +465,9 @@ if __name__ == "__main__":
             train_data["filepath"].append(
                 os.path.join(config.train_dir, item["file_name"])
             )
-            train_data["prompt"].append(item["text"])
+            train_data["prompt"].append(
+                item[config.target_label_name]
+            )  # text or orig_text
 
         train_df = pd.DataFrame.from_dict(train_data)
 

@@ -115,3 +115,21 @@
   - https://www.kaggle.com/datasets/xiaozhouwang/sd2hardcode
   - https://www.kaggle.com/datasets/xiaozhouwang/sd2gpt2
   - (optional) https://www.kaggle.com/datasets/jeinsong/chatgpt-images-dedup-0330-split
+
+## v6 데이터셋 구성 (04/11)
+
+- ddb 데이터 원본 다시 가져와서 놓쳤던 데이터 대거 보충
+- validation split도 다시 만듦
+- train: 363269 건
+- valid: 11262 건
+
+## v7 데이터셋 구성 (04/17)
+
+- ddb 데이터 추가 보충 (111k 건에서 9844개 삭제 됨) > 101672 건 > v6 train(0.85)/validation(0.75) dedup > 96635 건
+- chatgpt 데이터 보충 > v6 train(0.85)/validation(0.75) dedup > 23385 건
+- dedup_prompts_metdata_format.py > train / validation 각각에 self-dedup 적용 (0.85)
+  - train -1022 > 477267 건
+  - valid -39 > 16223 건
+- dedup_prompts_metdata_format.py > train / validation cross-dedup 적용 (0.75)
+  - valid -2988 > 13235 건
+- 이후에 metadata.jsonl 기준으로 파일 삭제 (prepare.py)

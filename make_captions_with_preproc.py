@@ -162,25 +162,62 @@ def preprocess(text: str) -> Optional[str]:
 
     # 추가 스탑워드 패턴 제거
     # todo: station art trending on artstation by art station at his art station
-    stop_patterns = [
-        "by art station",
-        "highly detailed digital",
-        "greg rutkowski and",
-        "artstation concept art",
-        "and greg rutkowski",
-        "digital painting artstation",
-        "painting artstation concept",
-        "hyperdetailed artstation cgsociety",
-        "by artstation",
-        "octane render",
-        "highly detailed",
-        "contest winner",
+    artists = [
+        "greg rutkowski",
+        "wlop",
+        "ilya kuvshinov",
+        "alphonse mucha",
+        "rossdraws",
+        "craig mullins",
+        "james jean",
+        "rhads",
+    ]
+    for artist in artists:
+        regex_pattern = re.compile(
+            r"\b" + re.escape("by " + artist) + r"\b", flags=re.IGNORECASE
+        )
+        text = regex_pattern.sub("", text).strip()
+
+        regex_pattern = re.compile(
+            r"\b" + re.escape(artist) + r"\b", flags=re.IGNORECASE
+        )
+        text = regex_pattern.sub("", text).strip()
+
+    trendings = [
         "artstation",
         "art station",
         "cgsociety",
         "deviantart",
         "pinterest",
         "shuttershock",
+        "behance",
+        "instagram",
+        "zbrush central",
+        "cg society",
+        "polycount",
+    ]
+    for trending in trendings:
+        regex_pattern = re.compile(
+            r"\b" + re.escape("by " + trending) + r"\b", flags=re.IGNORECASE
+        )
+        text = regex_pattern.sub("", text).strip()
+
+        regex_pattern = re.compile(
+            r"\b" + re.escape(trending) + r"\b", flags=re.IGNORECASE
+        )
+        text = regex_pattern.sub("", text).strip()
+
+    #: 그 외 패턴
+    stop_patterns = [
+        "artgerm and greg rutkowski and alphonse mucha",
+        "greg rutkowski and",
+        "artstation concept art",
+        "and greg rutkowski",
+        "digital painting artstation",
+        "painting artstation concept",
+        "hyperdetailed artstation cgsociety",
+        "octane render",
+        "contest winner",
         "/r/",
         "8k",
         "4k",
@@ -240,15 +277,15 @@ def preprocess(text: str) -> Optional[str]:
 
 
 if __name__ == "__main__":
-    prefix = "chatgpt_0330_"
-    input_path = "./resources/prompts_chatgpt_0330_dedup.txt"
-    output_path = "./diffusion/chatgpt-images/metadata.jsonl"
-    image_dir_path = "./diffusion/chatgpt-images"
+    prefix = "dbd3_"
+    input_path = "./resources/prompts_dbd_prpr-self-split-wt-wv-dedup_2_085t_0.75v.txt"
+    output_path = "./diffusion/dbd3/metadata.jsonl"
+    image_dir_path = "./diffusion/dbd3"
 
     #: TODO 임시
-    # input_path = "./resources/900k_dedup_08_split_dedup_wt_wv.txt"
-    # output_path = "./resources/tmp.txt"
-    # image_dir_path = None
+    input_path = "./diffusion/v6_dbd3_dbd4_080.txt"
+    output_path = "./diffusion/v6_dbd3_dbd4_080_pprc.txt"
+    image_dir_path = None
 
     skip_cnt = 0
 

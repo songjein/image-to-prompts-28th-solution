@@ -23,12 +23,11 @@ def preprocess(text: str) -> Optional[str]:
     if text.count("-") > 5:
         return None
 
-    # by를 포함하는 경우 사람이 너무 많다면(3명 이상)
+    # by를 포함하는 경우 사람이 너무 많다면(3명 초과)
     if " by " in text:
         doc = nlp(text)
         people = [ent.text for ent in doc.ents if ent.label_ == "PERSON"]
         if len(people) > 3:
-            print(text)
             return None
 
     # 무조건 날려야 하는 애들
@@ -408,7 +407,7 @@ if __name__ == "__main__":
     image_dir_path = "./diffusion/dbd3"
 
     #: TODO 임시
-    input_path = "./diffusion/v6_dbd3_dbd4_080_pprc.txt"
+    input_path = "./diffusion/v6_dbd3_dbd4_080.txt"
     output_path = "./diffusion/v6_dbd3_dbd4_080_pprc.txt"
     image_dir_path = None
 
@@ -455,12 +454,12 @@ if __name__ == "__main__":
             for idx, line in enumerate(tqdm(f)):
                 prompt = line.strip()
 
-                # try:
-                #     if detect(prompt) != "en":
-                #         skip_cnt += 1
-                #         continue
-                # except:
-                #     print("exception at", prompt)
+                try:
+                    if detect(prompt) != "en":
+                        skip_cnt += 1
+                        continue
+                except:
+                    print("exception at", prompt)
 
                 text = preprocess(prompt)
                 if text is None:

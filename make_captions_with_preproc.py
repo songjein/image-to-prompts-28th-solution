@@ -3,18 +3,58 @@ import os
 import re
 from typing import Optional
 
+import spacy
 from langdetect import detect
 from tqdm import tqdm
+
+# NOTE: python -m spacy download en_core_web_sm
+nlp = spacy.load("en_core_web_sm")
 
 
 def preprocess(text: str) -> Optional[str]:
     text = text.strip()
 
+    # [0] 사전 필터링
     concat_text = text.replace(" ", "")
     if "http" in concat_text:
         return None
 
-    # [0] 사전 필터링
+    # -를 남용
+    if text.count("-") > 5:
+        return None
+
+    # by를 포함하는 경우 사람이 너무 많다면(3명 이상)
+    if " by " in text:
+        doc = nlp(text)
+        people = [ent.text for ent in doc.ents if ent.label_ == "PERSON"]
+        if len(people) > 3:
+            print(text)
+            return None
+
+    # 무조건 날려야 하는 애들
+    ban_words = [
+        "#",
+        "1/",
+        "jpg",
+        "png",
+        "jpeg",
+        "1/160s",
+        "XF IQ4",
+        "EOS 1D",
+        "EOS-1D",
+        "EOS R3",
+        "EOS-R3",
+        "150MP",
+        "150 MP",
+        "apeture",
+        "sony a 7",
+        "in-frame",
+        "rendered with",
+        "resolution-W",
+    ]
+    for word in ban_words:
+        if word.lower() in text.lower():
+            return None
 
     words = text.split()
     uniq_words = set(words)
@@ -31,9 +71,22 @@ def preprocess(text: str) -> Optional[str]:
 
     # [1] 전처리
 
+    # 비율 패턴 지우기 16:9
+    text = re.sub(r"\d+:\d+", "", text)
+
+    # 반복 특수 문자 한 번으로 교정
+    text = re.sub(r"([()\[\]{}])\1+", r"\1", text)
+
     # 알수 없는 문자 제거
     text = text.replace("ï¿½", "")
     text = text.replace(";", ", ")
+    text = text.replace("”", "")
+    text = text.replace("!", ".")
+    text = text.replace("_", " ")
+    text = text.replace(":::", " ")
+    text = text.replace("::", " ")
+    text = text.replace(":", " ")
+    text = text.replace("|", " | ")
 
     # 콤마 좌우에 빈칸 없는 경우
     text = re.sub(r"(?<=[^ ]),(?=[^ ])", ", ", text)
@@ -67,10 +120,27 @@ def preprocess(text: str) -> Optional[str]:
     text = re.sub(r"[hw]\d+", "", text)
     text = re.sub(r"(?i)[hw]-\d+", "", text)
 
+    # -w 1024, -h 2028, -n 10 패턴
+    text = re.sub(r"-[whn]\s+\d+", "", text)
+    # w 1024, h 2028, n 10 패턴
+    text = re.sub(r"\b[whn]\s+\d+", "", text)
+    # —height 1024 —width 1024 패턴
+    text = re.sub(r"-*(height|width)\s+\d+", "", text)
+
     # f/5.6, f2. 8, f / 2. 4, f 2. 8, f/1. 96
     text = re.sub(r"(?i)\bf\s*/?\s*\d\.\s*\d\b", "", text)
     # f/20, f/8
     text = re.sub(r"(?i)\bf\s*/\s*\d\b", "", text)
+    # f. 14
+    text = re.sub(r"f\.\s*\d+", "", text)
+    # -숫자 n
+    text = re.sub(r"-?\d+\s*n", "", text)
+    # -숫자
+    text = re.sub(r"\b\s-\d+\b", "", text)
+    # 숫자 + 공백 + 캐릭터
+    text = re.sub(r"\b(\d+)\s+([a-zA-Z])\b", r"\1\2", text)
+    # 숫자 + t
+    text = re.sub(r"\d+\s*t", "", text)
 
     # photo 85mm, 12314mm, 50mm dslr, 100 mm lens
     text = re.sub(
@@ -78,17 +148,30 @@ def preprocess(text: str) -> Optional[str]:
     )
 
     # uhd, fhd, ... 패턴
-    text = re.sub(r"(?i)\b(ultra hd|fullhd|ultrahd|fhd|uhd|hd|hq|hdr)\b", "", text)
+    text = re.sub(
+        r"(?i)\b(ultra hd|full hd|ultra hd|fullhd|ultrahd|fhd|uhd|hd|hq|hdr)\b",
+        "",
+        text,
+    )
 
-    # trending on + word 패턴
-    text = re.sub(r"\b(?:trending|featured)\b on \b\w+\b", "", text)
+    # trending on + word 패턴 (trending on artstation)
+    text = re.sub(r"\b(?:trending|featured)\s?(on|in|at)?\s?\b\w+\b", "", text)
 
     # high resolution, unreal engine, award winning 제거
-    text = re.sub(r"high-? resolution", "", text, flags=re.IGNORECASE)
+    text = re.sub(
+        r"(low|ultra|high|hi|super|hyper)?-?\s?resolution",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
     text = re.sub(r"unreal\s?engine", "", text, flags=re.IGNORECASE)
     text = re.sub(r"cry\s?engine", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bue\s*\d+", "", text, flags=re.IGNORECASE)
     text = re.sub(
-        r"award\s?-?winning(\sphotography)?(\sphoto)?", "", text, flags=re.IGNORECASE
+        r"(award|prize)\s?-?winning(\sphotography)?(\sphoto)?",
+        "",
+        text,
+        flags=re.IGNORECASE,
     )
 
     # ar 숫자:숫자 패턴 제거
@@ -112,6 +195,8 @@ def preprocess(text: str) -> Optional[str]:
     # 연속된 , , 없애기 [1회 반복]
     text = re.sub(r",\s,\s,", ", ", text)
     text = re.sub(r",\s,", ", ", text)
+    text = re.sub(r",\s\.", ", ", text)
+    text = re.sub(r"\.\s,", ", ", text)
 
     # 연속된 . . 없애기 [1회 반복]
     text = re.sub(r"\.\s\.\s\.", ". ", text)
@@ -162,6 +247,32 @@ def preprocess(text: str) -> Optional[str]:
 
     # 추가 스탑워드 패턴 제거
     # todo: station art trending on artstation by art station at his art station
+    stop_patterns = [
+        "artgerm and greg rutkowski and alphonse mucha",
+        "hyperdetailed artstation cgsociety",
+        "digital painting artstation",
+        "painting artstation concept",
+        "artstation concept art",
+        "greg rutkowski and",
+        "and greg rutkowski",
+        "drawn by artgerm",
+        "contest winner",
+        "contest-winning",
+        "contest-winner",
+        "award-winning",
+        "award-winner",
+        "octane render",
+        "rtx",
+        "/r/",
+        "8k",
+        "4k",
+    ]
+    for pattern in stop_patterns:
+        regex_pattern = re.compile(
+            r"\b" + re.escape(pattern) + r"\b", flags=re.IGNORECASE
+        )
+        text = regex_pattern.sub("", text).strip()
+
     artists = [
         "greg rutkowski",
         "wlop",
@@ -184,6 +295,8 @@ def preprocess(text: str) -> Optional[str]:
         text = regex_pattern.sub("", text).strip()
 
     trendings = [
+        "national geographic",
+        "artstationHD",
         "artstation",
         "art station",
         "cgsociety",
@@ -195,6 +308,10 @@ def preprocess(text: str) -> Optional[str]:
         "zbrush central",
         "cg society",
         "polycount",
+        "shutterstock",
+        "artgerm",
+        "redshift",
+        "octane",
     ]
     for trending in trendings:
         regex_pattern = re.compile(
@@ -207,30 +324,11 @@ def preprocess(text: str) -> Optional[str]:
         )
         text = regex_pattern.sub("", text).strip()
 
-    #: 그 외 패턴
-    stop_patterns = [
-        "artgerm and greg rutkowski and alphonse mucha",
-        "greg rutkowski and",
-        "artstation concept art",
-        "and greg rutkowski",
-        "digital painting artstation",
-        "painting artstation concept",
-        "hyperdetailed artstation cgsociety",
-        "octane render",
-        "contest winner",
-        "/r/",
-        "8k",
-        "4k",
-    ]
-    for pattern in stop_patterns:
-        regex_pattern = re.compile(
-            r"\b" + re.escape(pattern) + r"\b", flags=re.IGNORECASE
-        )
-        text = regex_pattern.sub("", text).strip()
-
     # 연속된 , , 없애기 [2회 반복]
     text = re.sub(r",\s,\s,", ", ", text)
     text = re.sub(r",\s,", ", ", text)
+    text = re.sub(r",\s\.", ", ", text)
+    text = re.sub(r"\.\s,", ", ", text)
 
     # 연속된 . . 없애기 [2회 반복]
     text = re.sub(r"\.\s\.\s\.", ". ", text)
@@ -267,11 +365,38 @@ def preprocess(text: str) -> Optional[str]:
     # 연속된 스페이스 하나로 통일
     text = re.sub(r"\s+", " ", text).strip()
 
-    # 마지막 구두점 제거
-    text = re.sub(r"[^\w\s]+$", "", text).strip()
+    # 구두점 좌우에 스페이스가 있다면 오른쪽만 남기기
+    text = re.sub(r"\s+([.,;!?])", r"\1", text)
+
+    # (년도) 패턴
+    text = re.sub(r"\(\s*\d+\s*\)", "", text)
+
+    # 연속된 , , 없애기 [1회 반복]
+    text = re.sub(r",\s,\s,", ", ", text)
+    text = re.sub(r",\s,", ", ", text)
+    text = re.sub(r",\s\.", ", ", text)
+    text = re.sub(r"\.\s,", ", ", text)
+
+    # 연속된 . . 없애기 [1회 반복]
+    text = re.sub(r"\.\s\.\s\.", ". ", text)
+    text = re.sub(r"\.\s\.", ". ", text)
+
+    # 연속된 ; ; 없애기 [1회 반복]
+    text = re.sub(r";\s;\s;", "; ", text)
+    text = re.sub(r";\s;", "; ", text)
 
     # 문장 시작 구두점 제거
     text = re.sub(r"^\W+", "", text).strip()
+
+    # 기타
+    text = text.replace(" _ ", " ")
+
+    # 연속된 스페이스 하나로 통일
+    text = re.sub(r"\s+", " ", text).strip()
+
+    # 마지막에 공백+and로 끝나는 경우
+    if text[-4:] == " and":
+        text = text[:-3]
 
     return text
 
@@ -283,7 +408,7 @@ if __name__ == "__main__":
     image_dir_path = "./diffusion/dbd3"
 
     #: TODO 임시
-    input_path = "./diffusion/v6_dbd3_dbd4_080.txt"
+    input_path = "./diffusion/v6_dbd3_dbd4_080_pprc.txt"
     output_path = "./diffusion/v6_dbd3_dbd4_080_pprc.txt"
     image_dir_path = None
 
@@ -330,19 +455,20 @@ if __name__ == "__main__":
             for idx, line in enumerate(tqdm(f)):
                 prompt = line.strip()
 
-                try:
-                    if detect(prompt) != "en":
-                        skip_cnt += 1
-                        continue
-                except:
-                    print("exception at", prompt)
+                # try:
+                #     if detect(prompt) != "en":
+                #         skip_cnt += 1
+                #         continue
+                # except:
+                #     print("exception at", prompt)
 
                 text = preprocess(prompt)
                 if text is None:
                     skip_cnt += 1
                     continue
 
-                captions.append(prompt)
+                # captions.append(prompt)
+                captions.append(text)  # 전처리된 것으로 저장 (gpt)
 
         with open(output_path, "w", encoding="utf-8") as f:
             for prompt in captions:

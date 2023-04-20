@@ -17,7 +17,7 @@ from transformers import (
 
 from models.dataset import ImageTextDataset, get_transformation_for_train
 from models.model import EncoderDecoder, LanguageModel, VisionModel
-from common.utils import TQDM_FORMAT, create_logger
+from common.utils import TQDM_FORMAT, create_logger, LayerwiseDecayAdamW
 
 
 def seed_everything(seed):
@@ -40,7 +40,7 @@ if __name__ == "__main__":
     # Model setting
     print(f"[+] Load VLM model")
 
-    vm_name = "microsoft/swin-base-patch4-window12-384-in22k" #"laion/CLIP-ViT-L-14-laion2B-s32B-b82K"  # "openai/clip-vit-large-patch14"
+    vm_name = "microsoft/swin-large-patch4-window12-384-in22k"  # "laion/CLIP-ViT-L-14-laion2B-s32B-b82K"  # "openai/clip-vit-large-patch14"
     lm_name = "gpt2-medium"  # "Gustavosta/MagicPrompt-Stable-Diffusion"
     n_image_token = 4
     logger.info(f"vm_name:{vm_name}\nlm_name:{lm_name}\nn_image_token:{n_image_token}")
@@ -108,7 +108,7 @@ if __name__ == "__main__":
         validation_dataset,
         shuffle=False,
         drop_last=False,
-        batch_size=batch_size,
+        batch_size=16,
         num_workers=0,
     )
     logger.info(f"max_seq_length:{max_seq_length}\nbatch_size:{batch_size}")
@@ -131,7 +131,8 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
-    optimizer = AdamW(model.parameters(), lr=learning_rate)
+    #optimizer = AdamW(model.parameters(), lr=learning_rate)
+    optimizer = LayerwiseDecayAdamW(model, base_lr=learning_rate)
     scheduler = get_cosine_schedule_with_warmup(
         optimizer, num_warmup_steps=warmup_steps, num_training_steps=num_training_steps
     )
@@ -204,6 +205,7 @@ if __name__ == "__main__":
                 model.eval()
                 val_loss = 0
                 num_val_batches = 0
+                torch.cuda.empty_cache()
 
                 with torch.no_grad():
                     for val_batch in tqdm(
@@ -236,14 +238,16 @@ if __name__ == "__main__":
                     print(f"[+] Save best model")
                     torch.save(
                         model.state_dict(),
-                        f"results/swin-0414-384-v6/best-model.ckpt",
+                        f"results/swin-0418-384-large-v6/best-model.ckpt",
                     )
                     best_loss = val_loss
 
                 model.train()
+                torch.cuda.empty_cache()
+
         torch.save(
             model.state_dict(),
-            f"results/swin-0414-384-v6/{epoch}epoch-model.ckpt",
+            f"results/swin-0418-384-large-v6/{epoch}epoch-model.ckpt",
         )
 
     print(f"[+] Finished training")

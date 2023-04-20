@@ -6,6 +6,9 @@ from datetime import datetime
 from logging import Logger
 from typing import Optional, TextIO
 
+import torch
+import numpy as np
+
 import tqdm
 
 
@@ -92,3 +95,48 @@ def create_logger(
     logger.propagate = False
 
     return logger
+
+
+class LayerwiseDecayAdamW(torch.optim.Optimizer):
+    def __init__(
+        self,
+        model,
+        base_lr,
+        min_lr=1e-6,
+        backbone_weight_decay=1e-3,
+        head_weight_decay=1e-5,
+        head_lr_factor=10.0,
+    ):
+        params = []
+
+        layers = [model.encoder.model.embeddings] + list(model.encoder.model.encoder.layers)
+        learning_rates = np.linspace(base_lr, min_lr, len(layers))
+        for idx, layer in enumerate(reversed(layers)):
+            lr = learning_rates[idx]
+            params += [
+                {
+                    "params": layer.parameters(),
+                    "lr": lr,
+                    "weight_decay": backbone_weight_decay,
+                }
+            ]
+
+        head_lr = base_lr * head_lr_factor
+        params += [
+            {
+                "params": model.encoder.projection_features.parameters(),
+                "lr": head_lr,
+                "weight_decay": head_weight_decay,
+            }
+        ]
+
+        super(LayerwiseDecayAdamW, self).__init__(
+            params, defaults=dict(weight_decay=backbone_weight_decay)
+        )
+        self._optimizer = torch.optim.AdamW(self.param_groups)
+
+    def step(self, closure=None):
+        return self._optimizer.step(closure=closure)
+
+    def zero_grad(self, set_to_none=False):
+        return self._optimizer.zero_grad(set_to_none=set_to_none)

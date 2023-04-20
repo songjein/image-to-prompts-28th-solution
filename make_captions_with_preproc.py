@@ -23,11 +23,15 @@ def preprocess(text: str) -> Optional[str]:
     if text.count("-") > 5:
         return None
 
-    # by를 포함하는 경우 사람이 너무 많다면(3명 초과)
-    if " by " in text:
+    # |를 남용
+    if text.count("|") > 5:
+        return None
+
+    # by 혹은 style을 포함하는 경우 사람이 너무 많다면(2명 이상)
+    if " by " in text or " style ":
         doc = nlp(text)
         people = [ent.text for ent in doc.ents if ent.label_ == "PERSON"]
-        if len(people) > 3:
+        if len(people) >= 2:
             return None
 
     # 무조건 날려야 하는 애들
@@ -73,6 +77,9 @@ def preprocess(text: str) -> Optional[str]:
     # 비율 패턴 지우기 16:9
     text = re.sub(r"\d+:\d+", "", text)
 
+    # 3/4
+    text = re.sub(r"\b\d/\d\s*(view)?\b", "", text)
+
     # 반복 특수 문자 한 번으로 교정
     text = re.sub(r"([()\[\]{}])\1+", r"\1", text)
 
@@ -85,7 +92,7 @@ def preprocess(text: str) -> Optional[str]:
     text = text.replace(":::", " ")
     text = text.replace("::", " ")
     text = text.replace(":", " ")
-    text = text.replace("|", " | ")
+    text = text.replace("—", "-")
 
     # 콤마 좌우에 빈칸 없는 경우
     text = re.sub(r"(?<=[^ ]),(?=[^ ])", ", ", text)
@@ -119,31 +126,65 @@ def preprocess(text: str) -> Optional[str]:
     text = re.sub(r"[hw]\d+", "", text)
     text = re.sub(r"(?i)[hw]-\d+", "", text)
 
-    # -w 1024, -h 2028, -n 10 패턴
-    text = re.sub(r"-[whn]\s+\d+", "", text)
-    # w 1024, h 2028, n 10 패턴
-    text = re.sub(r"\b[whn]\s+\d+", "", text)
-    # —height 1024 —width 1024 패턴
-    text = re.sub(r"-*(height|width)\s+\d+", "", text)
+    # 768H 640W 케이스
+    text = re.sub(r"(\d)\s*([hw])", r"\1\2", text)
+    text = re.sub(r"\b\d+[hw]?\b", "", text, flags=re.IGNORECASE)
 
+    # -w 1024, -h 2028, -n 10 패턴
+    text = re.sub(r"-[whn]\s+\d+", "", text, flags=re.IGNORECASE)
+    # w 1024, h 2028, n 10 패턴
+    text = re.sub(r"\b[whn]\s+\d+", "", text, flags=re.IGNORECASE)
+    # -height 1024 -width 1024 패턴
+    text = re.sub(r"-*(height|width)\s+\d+", "", text, flags=re.IGNORECASE)
+    # --steps 50
+    text = re.sub(r"\-*steps?\s\d+", "", text, flags=re.IGNORECASE)
+    # [순서 중요] ---i 숫자, -s 숫자, --c 숫자
+    text = re.sub(r"\-+[a-z]{1,3}\s\d+", "", text, flags=re.IGNORECASE)
+    # [순서 중요] ---i -s
+    text = re.sub(r"\-+[a-z]", "", text, flags=re.IGNORECASE)
+    # v. a. b. e.
+    text = re.sub(r"\b[a-z]\.\s", "", text, flags=re.IGNORECASE)
+    # 10-i, 100i
+    text = re.sub(r"\b\d+-?i\b", "", text, flags=re.IGNORECASE)
+
+    # 1. 8f
+    text = re.sub(r"\b\d*\.\s*\d*\s*f\b", "", text)
     # f/5.6, f2. 8, f / 2. 4, f 2. 8, f/1. 96
-    text = re.sub(r"(?i)\bf\s*/?\s*\d\.\s*\d\b", "", text)
+    text = re.sub(r"(?i)\bf\s*/?\s*\d\.\s*\d\b", "", text, flags=re.IGNORECASE)
     # f/20, f/8
-    text = re.sub(r"(?i)\bf\s*/\s*\d\b", "", text)
+    text = re.sub(r"(?i)\bf\s*/\s*\d\b", "", text, flags=re.IGNORECASE)
     # f. 14
-    text = re.sub(r"f\.\s*\d+", "", text)
+    text = re.sub(r"f\.\s*\d+", "", text, flags=re.IGNORECASE)
+    # f 숫자
+    text = re.sub(r"f\s*\d+", "", text, flags=re.IGNORECASE)
+    # 숫자 f
+    text = re.sub(r"\d+\s*f", "", text, flags=re.IGNORECASE)
     # -숫자 n
     text = re.sub(r"-?\d+\s*n", "", text)
     # -숫자
     text = re.sub(r"\b\s-\d+\b", "", text)
     # 숫자 + 공백 + 캐릭터
     text = re.sub(r"\b(\d+)\s+([a-zA-Z])\b", r"\1\2", text)
-    # 숫자 + t
-    text = re.sub(r"\d+\s*t", "", text)
+    # 숫자 + t/k
+    text = re.sub(r"\d+\s*[tks]", "", text)
+
+    # |숫자 패턴
+    text = re.sub(r"\|\d+", "", text)
+
+    # 숫자 px 패턴
+    text = re.sub(r"\b\d+\s*px\b", "", text, flags=re.IGNORECASE)
+    text = text.replace(" px ", "")
+    text = text.replace(" PX ", "")
+
+    # 숫자 mpx 패턴
+    text = re.sub(r"\b\d+\s*(?:mpx)\b", "", text)
 
     # photo 85mm, 12314mm, 50mm dslr, 100 mm lens
     text = re.sub(
-        r"\b(sigma\s)?(photo\s)?\d+\s*mm(\sdslr)?(\slens)?(\sfilm)?\b", "", text
+        r"\b(sigma\s)?(photo\s)?\d+\s*mm(\sdslr)?(\slens)?(\sfilm)?\b",
+        "",
+        text,
+        flags=re.IGNORECASE,
     )
 
     # uhd, fhd, ... 패턴
@@ -151,10 +192,16 @@ def preprocess(text: str) -> Optional[str]:
         r"(?i)\b(ultra hd|full hd|ultra hd|fullhd|ultrahd|fhd|uhd|hd|hq|hdr)\b",
         "",
         text,
+        flags=re.IGNORECASE,
     )
 
     # trending on + word 패턴 (trending on artstation)
-    text = re.sub(r"\b(?:trending|featured)\s?(on|in|at)?\s?\b\w+\b", "", text)
+    text = re.sub(
+        r"\b(?:trending|featured)\s?(on|in|at)?\s?\b\w+\b",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
 
     # high resolution, unreal engine, award winning 제거
     text = re.sub(
@@ -323,6 +370,9 @@ def preprocess(text: str) -> Optional[str]:
         )
         text = regex_pattern.sub("", text).strip()
 
+    # [digital art] 케이스
+    text = re.sub(r"\[\s*digital art\s*\]", "", text)
+
     # 연속된 , , 없애기 [2회 반복]
     text = re.sub(r",\s,\s,", ", ", text)
     text = re.sub(r",\s,", ", ", text)
@@ -369,6 +419,12 @@ def preprocess(text: str) -> Optional[str]:
 
     # (년도) 패턴
     text = re.sub(r"\(\s*\d+\s*\)", "", text)
+    # (년도-년도) 패턴
+    text = re.sub(r"\(\d{4}-\d{4}\)", "", text)
+    # (년도 패턴
+    text = re.sub(r"\(\s*\d+\s*", "", text)
+    # (년도-년도 패턴
+    text = re.sub(r"\(\d{4}-\d{4}", "", text)
 
     # 연속된 , , 없애기 [1회 반복]
     text = re.sub(r",\s,\s,", ", ", text)
@@ -384,11 +440,29 @@ def preprocess(text: str) -> Optional[str]:
     text = re.sub(r";\s;\s;", "; ", text)
     text = re.sub(r";\s;", "; ", text)
 
+    # (by 단어 단어) 패턴 지우기
+    text = re.sub(r"\((by [^)]+)\)", "", text, flags=re.IGNORECASE)
+
+    # 연속된 ,. 조합
+    text = re.sub(r"[.,]{2,}", " ", text)
+
     # 문장 시작 구두점 제거
     text = re.sub(r"^\W+", "", text).strip()
 
     # 기타
     text = text.replace(" _ ", " ")
+
+    # ||| 반복 패턴 빈칸 치환
+    text = re.sub(r"\|+", " ", text)
+
+    # ())(()), ))(())
+    text = re.sub(r"[()]{2,}", "", text)
+
+    # 5자리 이상 숫자 제거
+    text = re.sub(r"\b\d{5,}\b", "", text)
+
+    # 괄호 안 빈칸 제거
+    text = re.sub(r"\(\s*(\S+)\s*\)", "", text)
 
     # 연속된 스페이스 하나로 통일
     text = re.sub(r"\s+", " ", text).strip()
@@ -401,14 +475,14 @@ def preprocess(text: str) -> Optional[str]:
 
 
 if __name__ == "__main__":
-    prefix = "dbd3_"
-    input_path = "./resources/prompts_dbd_prpr-self-split-wt-wv-dedup_2_085t_0.75v.txt"
-    output_path = "./diffusion/dbd3/metadata.jsonl"
-    image_dir_path = "./diffusion/dbd3"
+    prefix = "dbd4_"
+    input_path = "./resources/dbd4_prompts.txt"
+    output_path = "./diffusion/dbd4/metadata.jsonl"
+    image_dir_path = "./diffusion/dbd4"
 
     #: TODO 임시
-    input_path = "./diffusion/v6_dbd3_dbd4_080.txt"
-    output_path = "./diffusion/v6_dbd3_dbd4_080_pprc.txt"
+    input_path = "./resources/v6_dbd3_dbd4_080_pprc.txt"
+    output_path = "./resources/v6_dbd3_dbd4_080_pprc_.txt"
     image_dir_path = None
 
     skip_cnt = 0
@@ -454,12 +528,12 @@ if __name__ == "__main__":
             for idx, line in enumerate(tqdm(f)):
                 prompt = line.strip()
 
-                try:
-                    if detect(prompt) != "en":
-                        skip_cnt += 1
-                        continue
-                except:
-                    print("exception at", prompt)
+                # try:
+                #     if detect(prompt) != "en":
+                #         skip_cnt += 1
+                #         continue
+                # except:
+                #     print("exception at", prompt)
 
                 text = preprocess(prompt)
                 if text is None:

@@ -96,7 +96,13 @@ class DiffusionCollator:
 
 
 def get_dataloaders(
-    trn_df, val_df, image_size, batch_size, use_aug, image_mean, image_std,
+    trn_df,
+    val_df,
+    image_size,
+    batch_size,
+    use_aug,
+    image_mean,
+    image_std,
 ):
     train_transform_w_haug = None
     train_transform_wo_haug = None
@@ -118,7 +124,12 @@ def get_dataloaders(
     )
 
     val_dataset = DiffusionDataset(
-        val_df, None, None, image_size, image_mean, image_std,
+        val_df,
+        None,
+        None,
+        image_size,
+        image_mean,
+        image_std,
     )
     collator = DiffusionCollator()
 

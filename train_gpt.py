@@ -1,6 +1,5 @@
 import random
 
-import torch
 from transformers import GPT2LMHeadModel, GPT2Tokenizer, GPT2Config
 from transformers import TextDataset, DataCollatorForLanguageModeling
 from transformers import Trainer, TrainingArguments
@@ -33,7 +32,7 @@ def fine_tune_gpt2(
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
         evaluation_strategy="steps",
-        eval_steps=1000,
+        eval_steps=100,
         logging_steps=1000,
         save_total_limit=2,
         logging_dir="./diffusion/gpt-logs/",
@@ -63,7 +62,7 @@ def fine_tune_gpt2(
 if __name__ == "__main__":
     random.seed(42)
 
-    with open("./resources/v6_dbd3_dbd4_080_pprc.txt") as f:
+    with open("./resources/v7.txt") as f:
         texts = []
         for line in f:
             texts.append(line)
@@ -85,10 +84,10 @@ if __name__ == "__main__":
     # model_name = "distilgpt2"  # GPT-2 모델 사용
     train_file = "./diffusion/gpt_train.txt"
     valid_file = "./diffusion/gpt_valid.txt"
-    output_dir = "./diffusion/gpt-outputs-distill/"
+    output_dir = "./diffusion/gpt-outputs-gpt2/"
 
-    model_name = "distilgpt2"  # "distilgpt2"
-    epochs = 10
+    model_name = "gpt2"  # "distilgpt2"
+    epochs = 5
     batch_size = 128
     max_seq_length = 77
 

@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from collections import defaultdict
 from typing import Optional
 
 import spacy
@@ -10,6 +11,8 @@ from tqdm import tqdm
 # NOTE: python -m spacy download en_core_web_sm
 nlp = spacy.load("en_core_web_sm")
 
+STAT = defaultdict(int)
+
 
 def preprocess(text: str) -> Optional[str]:
     text = text.strip()
@@ -17,21 +20,26 @@ def preprocess(text: str) -> Optional[str]:
     # [0] 사전 필터링
     concat_text = text.replace(" ", "")
     if "http" in concat_text:
+        STAT["http"] += 1
         return None
 
-    # -를 남용
+    # - 남용
     if text.count("-") > 5:
+        STAT["5x-"] += 1
         return None
 
-    # |를 남용
-    if text.count("|") > 5:
+    # by 남용
+    if text.count(" by ") > 3:
+        STAT["byx3"] += 1
         return None
 
-    # by 혹은 style을 포함하는 경우 사람이 너무 많다면(2명 이상)
-    if " by " in text or " style ":
+    # by 혹은 style을 포함하는 경우 사람이 너무 많다면(3명 초과)
+    # NOTE: 생성 때는 2명 이상이면 날림
+    if " by " in text or " style " in text:
         doc = nlp(text)
         people = [ent.text for ent in doc.ents if ent.label_ == "PERSON"]
-        if len(people) >= 2:
+        if len(people) > 3:
+            STAT["too many poople"] += 1
             return None
 
     # 무조건 날려야 하는 애들
@@ -57,6 +65,7 @@ def preprocess(text: str) -> Optional[str]:
     ]
     for word in ban_words:
         if word.lower() in text.lower():
+            STAT["stopwords"] += 1
             return None
 
     words = text.split()
@@ -65,11 +74,13 @@ def preprocess(text: str) -> Optional[str]:
     # [순서 중요] 반복 단어 개수 비율
     diff_uniq_words_ratio = (len(words) - len(uniq_words)) / len(words)
     if diff_uniq_words_ratio > 0.55:
+        STAT["repeat words ratio > 0.55"] += 1
         return None
 
     # [순서 중요] 빈칸으로 쪼갰을 때 각 단어의 평균 길이
     len_sub_words = [len(word) for word in words]
     if sum(len_sub_words) / len(len_sub_words) < 2.5:
+        STAT["split subword length"] += 1
         return None
 
     # [1] 전처리
@@ -78,7 +89,7 @@ def preprocess(text: str) -> Optional[str]:
     text = re.sub(r"\d+:\d+", "", text)
 
     # 3/4
-    text = re.sub(r"\b\d/\d\s*(view)?\b", "", text)
+    text = re.sub(r"\d/\d\s*(view)?", "", text)
 
     # 반복 특수 문자 한 번으로 교정
     text = re.sub(r"([()\[\]{}])\1+", r"\1", text)
@@ -107,28 +118,34 @@ def preprocess(text: str) -> Optional[str]:
     text = re.sub(r"([^\w\s])\1+", r"\1", text)
 
     # n - 5, n 9 패턴 제거
-    text = re.sub(r"\bn\s*-?\s*\d+\b", "", text)
+    text = re.sub(r"n\s*-?\s*\d+", "", text, flags=re.IGNORECASE)
 
-    # n과 숫자 사이의 빈칸 제거 ?
-    text = re.sub(r"\sn\s*(\d)", r" n\1", text)
+    # 숫자 + 공백 + 캐릭터
+    text = re.sub(r"\b(\d+)\s+([a-zA-Z])\b", r"\1\2", text, flags=re.IGNORECASE)
 
-    # k와 숫자 사이의 빈칸 제거 ?
-    text = re.sub(r"\b(\d+)\s*k\b", r"\1k", text)
+    # 숫자 + t/k
+    text = re.sub(r"\d+\s*[tks]", "", text, flags=re.IGNORECASE)
+
+    # n과 숫자 사이의 빈칸 제거 ? (50 n)
+    text = re.sub(r"\sn\s*(\d)", r" n\1", text, flags=re.IGNORECASE)
+
+    # k와 숫자 사이의 빈칸 제거 ? (20 k)
+    text = re.sub(r"\b(\d+)\s*k\b", r"\1k", text, flags=re.IGNORECASE)
 
     # h, w과 숫자 사이의 빈칸 제거
-    text = re.sub(r"(\s[hw])\s*(\d)", r"\1\2", text)
+    text = re.sub(r"(\s[hw])\s*(\d)", r"\1\2", text, flags=re.IGNORECASE)
 
     # n9 케이스 빈칸으로 치환
-    text = re.sub(r"\b(n\d+)\b", "", text)
-    text = re.sub(r"(?i)\b(n-\d+)\b", "", text)
+    text = re.sub(r"\b(n\d+)\b", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\b(n-\d+)\b", "", text, flags=re.IGNORECASE)
 
     # h300, w4000 케이스 빈칸으로 치환
-    text = re.sub(r"[hw]\d+", "", text)
-    text = re.sub(r"(?i)[hw]-\d+", "", text)
+    text = re.sub(r"[hw]\d+", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"[hw]-\d+", "", text, flags=re.IGNORECASE)
 
     # 768H 640W 케이스
-    text = re.sub(r"(\d)\s*([hw])", r"\1\2", text)
-    text = re.sub(r"\b\d+[hw]?\b", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"(\d)\s*([hw])", r"\1\2", text, flags=re.IGNORECASE)
+    text = re.sub(r"\b\d+[hw]\b", "", text, flags=re.IGNORECASE)
 
     # -w 1024, -h 2028, -n 10 패턴
     text = re.sub(r"-[whn]\s+\d+", "", text, flags=re.IGNORECASE)
@@ -139,9 +156,9 @@ def preprocess(text: str) -> Optional[str]:
     # --steps 50
     text = re.sub(r"\-*steps?\s\d+", "", text, flags=re.IGNORECASE)
     # [순서 중요] ---i 숫자, -s 숫자, --c 숫자
-    text = re.sub(r"\-+[a-z]{1,3}\s\d+", "", text, flags=re.IGNORECASE)
-    # [순서 중요] ---i -s
-    text = re.sub(r"\-+[a-z]", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\-+[isc]{1,3}\s\d+", "", text, flags=re.IGNORECASE)
+    # [순서 중요] ---i -s -c (ex. k-pop, sci-fi 조심)
+    text = re.sub(r"-+[isc]", "", text, flags=re.IGNORECASE)
     # v. a. b. e.
     text = re.sub(r"\b[a-z]\.\s", "", text, flags=re.IGNORECASE)
     # 10-i, 100i
@@ -150,9 +167,9 @@ def preprocess(text: str) -> Optional[str]:
     # 1. 8f
     text = re.sub(r"\b\d*\.\s*\d*\s*f\b", "", text)
     # f/5.6, f2. 8, f / 2. 4, f 2. 8, f/1. 96
-    text = re.sub(r"(?i)\bf\s*/?\s*\d\.\s*\d\b", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bf\s*/?\s*\d\.\s*\d\b", "", text, flags=re.IGNORECASE)
     # f/20, f/8
-    text = re.sub(r"(?i)\bf\s*/\s*\d\b", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bf\s*/\s*\d\b", "", text, flags=re.IGNORECASE)
     # f. 14
     text = re.sub(r"f\.\s*\d+", "", text, flags=re.IGNORECASE)
     # f 숫자
@@ -162,17 +179,13 @@ def preprocess(text: str) -> Optional[str]:
     # -숫자 n
     text = re.sub(r"-?\d+\s*n", "", text)
     # -숫자
-    text = re.sub(r"\b\s-\d+\b", "", text)
-    # 숫자 + 공백 + 캐릭터
-    text = re.sub(r"\b(\d+)\s+([a-zA-Z])\b", r"\1\2", text)
-    # 숫자 + t/k
-    text = re.sub(r"\d+\s*[tks]", "", text)
+    text = re.sub(r"\s-\d+", "", text)
 
     # |숫자 패턴
     text = re.sub(r"\|\d+", "", text)
 
     # 숫자 px 패턴
-    text = re.sub(r"\b\d+\s*px\b", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\d+\s*px\b", "", text, flags=re.IGNORECASE)
     text = text.replace(" px ", "")
     text = text.replace(" PX ", "")
 
@@ -223,9 +236,6 @@ def preprocess(text: str) -> Optional[str]:
     # ar 숫자:숫자 패턴 제거
     text = re.sub(r"ar\s+\d+\s*:\s*\d+", "", text)
 
-    # 구두점 직전의 공백 없애기
-    text = re.sub(r"\s*([^\w\s,\.!\?])(?:\s+|$)", r"\1", text)
-
     # 숫자 iso 패턴
     text = re.sub(r"(?i)\b\d+\s*iso\b", "", text)
 
@@ -233,7 +243,7 @@ def preprocess(text: str) -> Optional[str]:
     text = re.sub(r"(?i)\biso\s*\d+\b", "", text)
 
     # 숫자mm lens 패턴 없애기
-    text = re.sub(r"\b(using )?\d+mm lens\b", "", text)
+    text = re.sub(r"(using )?\d+mm lens\b", "", text)
 
     # 연속된 스페이스 하나로 통일 2
     text = re.sub(r"\s+", " ", text)
@@ -259,37 +269,8 @@ def preprocess(text: str) -> Optional[str]:
 
     # [순서 중요] 콤마가 10번 이상 등장
     if text.count(",") >= 10:
+        STAT["comma > 10"] += 1
         return None
-
-    # [순서 중요] by 뒤에 콤마가 3번 이상 등장
-    by_pattern = " by "
-    by_fp_pattern = "ed by "  # consumed, surrounded, scorched, squished, ignited, ...
-    and_pattern = " and "
-    if by_pattern in text and by_fp_pattern not in text:
-        index = text.index(by_pattern)
-        if by_pattern in text and text[index + 2 :].count(",") >= 3:
-            text = text[:index].strip()
-            if text[-1] == ",":
-                text = text[:-1]
-
-    # [순서 중요] by 뒤에 (and 개수 + by 개수) 두개 이상 등장
-    if by_pattern in text and by_fp_pattern not in text:
-        index = text.index(by_pattern)
-        if (
-            by_pattern in text
-            and (
-                text[index + 2 :].count(and_pattern)
-                + text[index + 2 :].count(by_pattern)
-            )
-            >= 2
-        ):
-            text = text[:index].strip()
-            if text[-1] == ",":
-                text = text[:-1]
-
-    # [순서 중요] by 부터 가장 가까운 콤마까지 빈칸 치환
-    if by_fp_pattern not in text:
-        text = re.sub(r"\bby\b.*?,", "", text)
 
     # 추가 스탑워드 패턴 제거
     # todo: station art trending on artstation by art station at his art station
@@ -389,6 +370,7 @@ def preprocess(text: str) -> Optional[str]:
 
     # 길이 기준 필터링 (하위 5%?, 상위 5%)
     if len(text) < 16 or len(text) > 256:
+        STAT["16 < len < 256"] += 1
         return None
 
     #: 현재 상태에서 단어 분리
@@ -398,6 +380,7 @@ def preprocess(text: str) -> Optional[str]:
     # 유니크 단어 개수 기준 필터링 (반복 케이스 잡기 위해 set 적용)
     num_uniq_words = len(uniq_words)
     if num_uniq_words <= 3:
+        STAT["uniq words"] += 1
         return None
 
     # [순서 중요] uni-gram 반복 교정
@@ -409,6 +392,7 @@ def preprocess(text: str) -> Optional[str]:
     # 자기 생각 적어놓은 류
     patterns = r"(?i)\b(i'll|i'm|i am|if you|if my|isn't|i need|help me|i like|i had|you know|i have)\b"
     if re.search(patterns, text, re.IGNORECASE):
+        STAT["thought"] += 1
         return None
 
     # 연속된 스페이스 하나로 통일
@@ -485,6 +469,31 @@ if __name__ == "__main__":
     output_path = "./resources/v6_dbd3_dbd4_080_pprc_.txt"
     image_dir_path = None
 
+    if False:
+        skip = 0
+        items = []
+        with open(
+            "./diffusion/image-to-prompt-train-valid-split-v7/train/metadata.jsonl"
+        ) as f:
+            for line in tqdm(f):
+                item = json.loads(line)
+                text = preprocess(item["orig_text"])
+                if text is None:
+                    skip += 1
+                    continue
+                item["text"] = text
+                items.append(item)
+
+        with open(
+            "./diffusion/image-to-prompt-train-valid-split-v7/train/metadata_.jsonl"
+        ) as f:
+            for item in items:
+                f.write(json.dumps(item, ensure_ascii=False) + "\n")
+
+        print("skip:", skip)
+        print(STAT)
+        exit()
+
     skip_cnt = 0
 
     if image_dir_path is not None:
@@ -546,5 +555,5 @@ if __name__ == "__main__":
         with open(output_path, "w", encoding="utf-8") as f:
             for prompt in captions:
                 f.write(prompt + "\n")
-
+    print(STAT)
     print(f"skip_count: {skip_cnt}")

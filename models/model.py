@@ -2,7 +2,7 @@ from typing import Dict
 
 import torch
 from torch import nn
-from transformers import CLIPVisionConfig, CLIPVisionModel, GPT2LMHeadModel, SwinModel
+from transformers import GPT2LMHeadModel, SwinModel
 
 
 class VisionModel(nn.Module):
@@ -19,24 +19,23 @@ class VisionModel(nn.Module):
             out_features=out_features,
         )
 
-        #self.clip_projection = nn.Linear(
-        #    in_features=self.output_dimension,
-        #    out_features=384,
-        #)
+        self.clip_projection = nn.Linear(
+            in_features=self.output_dimension,
+            out_features=384,
+        )
 
         if frozen_backbone:
             for p in self.model.parameters():
                 p.required_grad = False
 
     def _create_model(self):
-        #config = CLIPVisionConfig.from_pretrained(self.model_name)
+        # config = CLIPVisionConfig.from_pretrained(self.model_name)
         model = SwinModel.from_pretrained(self.model_name)
         return model
 
     def _get_output_dimension(self):
         return self.model.config.hidden_size
 
-    '''
     def get_clip_embedding(self, pixel_values):
         batch_size = pixel_values.shape[0]
         embeddings = self.model(pixel_values)
@@ -45,9 +44,9 @@ class VisionModel(nn.Module):
             embeddings = embeddings.pooler_output
         embeddings = embeddings.reshape(batch_size, self.output_dimension)
         embeddings = self.clip_projection(embeddings)
-
+        # normalize
+        embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
         return embeddings
-    '''
 
     def forward(self, pixel_values: torch.tensor):
         batch_size = pixel_values.shape[0]
@@ -125,12 +124,16 @@ class LanguageModel(GPT2LMHeadModel):
             batch_size = image_token_embeddings.shape[0]
             if input_ids is not None:
                 inputs_embeds = self.transformer.wte(input_ids)
-                image_token_embeddings = image_token_embeddings.reshape(batch_size, -1, self.n_embd)
-                #inputs_embeds[:, 0] = image_token_embeddings.type(inputs_embeds.dtype)
+                image_token_embeddings = image_token_embeddings.reshape(
+                    batch_size, -1, self.n_embd
+                )
+                # inputs_embeds[:, 0] = image_token_embeddings.type(inputs_embeds.dtype)
                 inputs_embeds = image_token_embeddings
                 input_ids = None
             else:
-                image_token_embeddings = image_token_embeddings.reshape(batch_size, -1, self.n_embd)
+                image_token_embeddings = image_token_embeddings.reshape(
+                    batch_size, -1, self.n_embd
+                )
                 inputs_embeds = image_token_embeddings
 
             input_ids = None

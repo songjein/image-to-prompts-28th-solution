@@ -6,11 +6,9 @@ from datetime import datetime
 from logging import Logger
 from typing import Optional, TextIO
 
-import torch
 import numpy as np
-
+import torch
 import tqdm
-
 
 __LOG_FORMAT = "Rank({rank}) | %(asctime)s | %(levelname)8s | %(message)s"
 TQDM_FORMAT = (
@@ -109,7 +107,9 @@ class LayerwiseDecayAdamW(torch.optim.Optimizer):
     ):
         params = []
 
-        layers = [model.encoder.model.embeddings] + list(model.encoder.model.encoder.layers)
+        layers = [model.encoder.model.embeddings] + list(
+            model.encoder.model.encoder.layers
+        )
         learning_rates = np.linspace(base_lr, min_lr, len(layers))
         for idx, layer in enumerate(reversed(layers)):
             lr = learning_rates[idx]
@@ -122,13 +122,15 @@ class LayerwiseDecayAdamW(torch.optim.Optimizer):
             ]
 
         head_lr = base_lr * head_lr_factor
-        params += [
-            {
-                "params": model.encoder.projection_features.parameters(),
-                "lr": head_lr,
-                "weight_decay": head_weight_decay,
-            }
-        ]
+        layers = [model.encoder.projection_features] + [model.encoder.clip_projection]
+        for layer in layers:
+            params += [
+                {
+                    "params": layer.parameters(),
+                    "lr": head_lr,
+                    "weight_decay": head_weight_decay,
+                }
+            ]
 
         super(LayerwiseDecayAdamW, self).__init__(
             params, defaults=dict(weight_decay=backbone_weight_decay)

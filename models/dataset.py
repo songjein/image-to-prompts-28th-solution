@@ -3,6 +3,7 @@ import os
 import albumentations as A
 import cv2
 import torch
+from sentence_transformers import SentenceTransformer
 from torch.utils.data import Dataset
 
 IMAGENET_MEAN_RGB = [0.485, 0.456, 0.406]
@@ -16,12 +17,12 @@ def get_transformation_for_train(image_size) -> A.Compose:
     """
     transform = A.Compose(
         [
-            #A.HorizontalFlip(p=0.5),
-            #A.ImageCompression(quality_lower=99, quality_upper=100),
-            #A.RandomBrightnessContrast(brightness_limit=0.1, contrast_limit=0.1, p=0.5),
-            #A.ShiftScaleRotate(
+            # A.HorizontalFlip(p=0.5),
+            # A.ImageCompression(quality_lower=99, quality_upper=100),
+            # A.RandomBrightnessContrast(brightness_limit=0.1, contrast_limit=0.1, p=0.5),
+            # A.ShiftScaleRotate(
             #    shift_limit=0.1, scale_limit=0.2, rotate_limit=10, border_mode=0, p=0.5
-            #),
+            # ),
             A.Resize(image_size[0], image_size[1]),
             A.Cutout(
                 max_h_size=int(image_size[0] * 0.1),
@@ -58,6 +59,10 @@ class ImageTextDataset(Dataset):
         self.eos_token_id = self.tokenizer.eos_token_id
         self.pad_token_id = self.tokenizer.pad_token_id
 
+        self.st_model = SentenceTransformer(
+            "sentence-transformers/all-MiniLM-L6-v2", device="cpu"
+        )
+
     def __len__(self):
         return len(self.data)
 
@@ -83,14 +88,17 @@ class ImageTextDataset(Dataset):
         # Load and preprocess the text
         # [<IMG> * n_image_token, prompt_texet, EOS]
         text = row["text"]
+        prompt_embeddings = self.st_model.encode(text, convert_to_tensor=True)
         inputs = self.tokenizer(
             text,
             truncation=True,
             max_length=self.max_seq_length - 1 - self.n_image_token,
         )
-        input_ids = [self.image_token_id] * self.n_image_token + inputs[
-            "input_ids"
-        ]  + [self.eos_token_id]
+        input_ids = (
+            [self.image_token_id] * self.n_image_token
+            + inputs["input_ids"]
+            + [self.eos_token_id]
+        )
         image_token_mask = [1] * self.n_image_token + [0] * (
             len(input_ids) - self.n_image_token
         )
@@ -119,5 +127,5 @@ class ImageTextDataset(Dataset):
             "label_ids": padded_label_ids,
             "image_token_mask": padded_image_token_mask,
             "pixel_values": pixel_values,
-            # "text": text,
+            "prompt_embeddings": prompt_embeddings,
         }

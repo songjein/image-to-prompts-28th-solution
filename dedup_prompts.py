@@ -3,10 +3,17 @@ from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
 if __name__ == "__main__":
-    input_path = "resources/prompts_chatgpt_0330.txt"
-    output_path = "resources/prompts_chatgpt_0330_dedup_085.txt"
+    input_path = "resources/gpt-prompts-generated_085self_085wt.txt"
+    output_path = "resources/gpt-prompts-generated_085self_085wt_075wv.txt"
     output_del_path = "./resources/del.txt"
-    thres = 0.85
+
+    comp_path = (
+        "./diffusion/image-to-prompt-train-valid-split-v7/validation/metadata.jsonl"
+    )
+    if "validation" in comp_path:
+        thres = 0.75
+    else:
+        thres = 0.85
 
     st_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2").cuda()
     cosim = torch.nn.CosineSimilarity(dim=1, eps=1e-7)
@@ -15,12 +22,11 @@ if __name__ == "__main__":
 
     n_train = 0
 
-    if False:
+    if True:
         import json
 
-        with open(
-            "./diffusion/image-to-prompt-train-valid-split-v5/train/metadata.jsonl"
-        ) as f:
+        # NOTE: train: 0.85, valid: 0.75
+        with open(comp_path) as f:
             for line in f:
                 prompts.append(json.loads(line)["text"])
         n_train = len(prompts)

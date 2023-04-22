@@ -13,9 +13,17 @@ def fine_tune_gpt2(
     epochs=1,
     batch_size=4,
     max_seq_length=128,
+    bos="<|startoftext|>",
+    eos="<|endoftext|>",
+    pad="<|pad|>",
 ):
     model = GPT2LMHeadModel.from_pretrained(model_name)
-    tokenizer = GPT2Tokenizer.from_pretrained(model_name)
+    tokenizer = GPT2Tokenizer.from_pretrained(
+        model_name,
+        bos_token=bos,
+        eos_token=eos,
+        pad_token=pad,
+    )
 
     train_dataset = TextDataset(
         tokenizer=tokenizer, file_path=train_file, block_size=max_seq_length
@@ -73,18 +81,21 @@ if __name__ == "__main__":
     train_data = texts[:n_train]
     valid_data = texts[n_train:]
 
+    bos = "<|startoftext|>"
+    eos = "<|endoftext|>"
+
     with open("./diffusion/gpt_train.txt", "w", encoding="utf-8") as f:
         for line in train_data:
-            f.write(line.replace("\n", "<|endoftext|>\n"))
+            f.write(bos + line.replace("\n", "<|endoftext|>\n"))
 
     with open("./diffusion/gpt_valid.txt", "w", encoding="utf-8") as f:
         for line in valid_data:
-            f.write(line.replace("\n", "<|endoftext|>\n"))
+            f.write(bos + line.replace("\n", "<|endoftext|>\n"))
 
     # model_name = "distilgpt2"  # GPT-2 모델 사용
     train_file = "./diffusion/gpt_train.txt"
     valid_file = "./diffusion/gpt_valid.txt"
-    output_dir = "./diffusion/gpt-outputs-gpt2/"
+    output_dir = "./diffusion/gpt-outputs-gpt2-2/"
 
     model_name = "gpt2"  # "distilgpt2"
     epochs = 5

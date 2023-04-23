@@ -187,7 +187,7 @@ def train(
         # NOTE: temp
         # model.load_state_dict(
         #     torch.load(
-        #         "./laion-CLIP-ViT-H-14-laion2B-s32B-b79K_on_v6_FT_1/laion-CLIP-ViT-H-14-laion2B-s32B-b79K_best.pth"
+        #         "./laion-CLIP-ViT-H-14-laion2B-s32B-b79K_on_v7_FT_1/laion-CLIP-ViT-H-14-laion2B-s32B-b79K_best.pth"
         #     )
         # )
     else:
@@ -371,10 +371,8 @@ if __name__ == "__main__":
     class Config(BaseModel):
         seed: int = 42
 
-        # TODO: text로도 512b 3ep해봐야함
-
-        memo = "on_v6_w_orig_text_3ep"
-        model_name: str = "vit_huge_patch14_224_clip_laion2b"
+        memo = "on_v7_wo_head_min_aug"
+        model_name: str = "openai/clip-vit-large-patch14-336"
 
         use_hf_model: bool = True
         if use_hf_model:
@@ -393,8 +391,13 @@ if __name__ == "__main__":
         elif model_name == "microsoft/swin-large-patch4-window12-384-in22k":
             hidden_size = 1536
             image_size = (384, 384)
+        if model_name == "laion/CLIP-ViT-L-14-laion2B-s32B-b82K":
+            hidden_size = 1024
 
-        if model_name == "vit_large_patch14_224_clip_laion2b":
+        if model_name in [
+            "vit_large_patch14_224_clip_laion2b",
+            "laion/CLIP-ViT-L-14-laion2B-s32B-b82K",
+        ]:
             image_mean = [0.5, 0.5, 0.5]
             image_std = [0.5, 0.5, 0.5]
         elif (
@@ -406,12 +409,12 @@ if __name__ == "__main__":
             image_std = [0.26862954, 0.26130258, 0.27577711]
 
         #: head 유무를 dropout rate > 0.0로 판단
-        dropout_rate: float = 0.1
+        dropout_rate: float = -0.1
         activation: str = "gelu"
         use_layernorm: bool = False
 
         batch_size: int = 256
-        grad_accum_steps = 2
+        grad_accum_steps = 1
         num_epochs: int = 3
         lr: float = 1e-4
         use_layerwise_lr_decay: bool = True
@@ -420,7 +423,7 @@ if __name__ == "__main__":
         milestones = [num_epochs // 3, 2 * num_epochs // 3]  # MultiStepLR용
         warmup_steps: int = 200
 
-        target_label_name = "orig_text"  # text or orig_text
+        target_label_name = "text"  # text or orig_text
 
         use_aug: bool = True
         use_amp: bool = True
@@ -429,8 +432,8 @@ if __name__ == "__main__":
         train_metadata_file: str = "metadata.jsonl"
         valid_metadata_file: str = "metadata.jsonl"
 
-        train_dir: str = "./diffusion/image-to-prompt-train-valid-split-v6/train"
-        valid_dir: str = "./diffusion/image-to-prompt-train-valid-split-v6/validation"
+        train_dir: str = "./diffusion/image-to-prompt-train-valid-split-v7/train"
+        valid_dir: str = "./diffusion/image-to-prompt-train-valid-split-v7/validation"
 
     config = Config()
 

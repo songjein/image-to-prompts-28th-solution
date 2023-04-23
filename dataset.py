@@ -19,12 +19,6 @@ def get_transformation_for_train(image_size, use_horizontal_flip=False) -> A.Com
         ops.append(A.HorizontalFlip(p=0.5))
 
     ops += [
-        A.ImageCompression(quality_lower=99, quality_upper=100),
-        A.RandomBrightnessContrast(brightness_limit=0.1, contrast_limit=0.1, p=0.5),
-        A.ShiftScaleRotate(
-            shift_limit=0.1, scale_limit=0.1, rotate_limit=10, border_mode=0, p=0.5
-        ),
-        A.Resize(image_size[0], image_size[1]),
         A.Cutout(
             max_h_size=int(image_size[0] * 0.1),
             max_w_size=int(image_size[1] * 0.1),

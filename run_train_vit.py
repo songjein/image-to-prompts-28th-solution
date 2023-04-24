@@ -162,6 +162,8 @@ def train(
     hidden_size,
     use_layernorm=False,
     weight_decay=1e-4,
+    backbone_weight_decay=5e-2,
+    head_weight_decay=1e-5,
     milestones=[],
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -225,6 +227,8 @@ def train(
             optimizer = LayerwiseDecayAdamW(
                 model,
                 base_lr=lr,
+                backbone_weight_decay=backbone_weight_decay,
+                head_weight_decay=head_weight_decay,
             )
             print("Layerwise LR Decay with AdamW")
     else:
@@ -371,7 +375,7 @@ if __name__ == "__main__":
     class Config(BaseModel):
         seed: int = 42
 
-        memo = "on_v7_wo_head_min_aug"
+        memo = "on_v7_wo_head"
         model_name: str = "openai/clip-vit-large-patch14-336"
 
         use_hf_model: bool = True
@@ -420,6 +424,8 @@ if __name__ == "__main__":
         use_layerwise_lr_decay: bool = True
         scheduler_type: str = "CosineSchedulerWithWarmup"
         weight_decay = 1e-4  # SGD용
+        backbone_weight_decay = 0.001  # AdamW for 백본 일반화
+        head_weight_decay = 1e-5  # AdamW for 헤드 자유도
         milestones = [num_epochs // 3, 2 * num_epochs // 3]  # MultiStepLR용
         warmup_steps: int = 200
 
@@ -511,5 +517,7 @@ if __name__ == "__main__":
         config.hidden_size,
         config.use_layernorm,
         config.weight_decay,
+        config.backbone_weight_decay,
+        config.head_weight_decay,
         config.milestones,
     )

@@ -4,11 +4,10 @@ import random
 import shutil
 import sys
 import warnings
-from typing import Dict, List, Optional, Tuple
+from typing import Tuple
 
 import numpy as np
 import pandas as pd
-import timm
 import torch
 from pydantic import BaseModel
 from scipy import spatial
@@ -70,14 +69,25 @@ class LayerwiseDecayAdamW(torch.optim.Optimizer):
         return self._optimizer.zero_grad(set_to_none=set_to_none)
 
 
+class MultisampledDropout(nn.Module):
+    def __init__(self):
+        super(MultisampledDropout, self).__init__()
+        self.dropouts = nn.ModuleList([nn.Dropout((i + 1) * 0.1) for i in range(5)])
+
+    def forward(self, x, module):
+        return torch.mean(
+            torch.stack([module(dropout(x)) for dropout in self.dropouts], dim=0), dim=0
+        )
+
+
 class HFVitModel(nn.Module):
     def __init__(
         self,
         model_path_or_name,
         hidden_size=1024,
         dropout_rate=0.1,
-        activation="relu",
-        use_layernorm=False,
+        use_complex_head=False,
+        use_ms_dropout=False,
     ):
         super(HFVitModel, self).__init__()
 
@@ -93,29 +103,28 @@ class HFVitModel(nn.Module):
         # for param in self.vision.parameters():
         #     param.requires_grad = False
 
-        if dropout_rate > 0.0:
-            print("w head", dropout_rate, "use layernorm", use_layernorm)
-            if use_layernorm:
-                self.fc = torch.nn.Sequential(
-                    torch.nn.Dropout(p=dropout_rate),
-                    torch.nn.Linear(hidden_size, hidden_size),
-                    torch.nn.ReLU() if activation == "relu" else torch.nn.GELU(),
-                    torch.nn.Linear(hidden_size, 384),
-                    torch.nn.LayerNorm(384),
-                )
-            else:
-                self.fc = torch.nn.Sequential(
-                    torch.nn.Dropout(p=dropout_rate),
-                    torch.nn.Linear(hidden_size, hidden_size),
-                    torch.nn.ReLU() if activation == "relu" else torch.nn.GELU(),
-                    torch.nn.Linear(hidden_size, 384),
-                )
+        if use_complex_head:
+            print("w complex head")
+            self.fc = torch.nn.Sequential(
+                torch.nn.Dropout(p=dropout_rate),
+                torch.nn.Linear(hidden_size, hidden_size),
+                torch.nn.GELU(),
+                torch.nn.Linear(hidden_size, 384),
+            )
         else:
-            print("wo head")
+            print("w simple head")
             self.fc = torch.nn.Linear(hidden_size, 384)
+
+        self.use_ms_dropout = use_ms_dropout
+        if use_ms_dropout:
+            self.dropout = MultisampledDropout()
 
     def forward(self, x):
         out = self.vision(x)["pooler_output"]
+
+        if self.use_ms_dropout:
+            return self.dropout(out, self.fc)
+
         return self.fc(out)
 
 
@@ -149,18 +158,17 @@ def train(
     num_epochs,
     lr,
     use_layerwise_lr_decay,
-    dropout_rate,
     output_path,
     scheduler_type,
     warmup_steps,
     use_aug,
     use_amp,
-    use_hf_model,
     image_mean,
     image_std,
-    activation,
     hidden_size,
-    use_layernorm=False,
+    dropout_rate,
+    use_complex_head=False,
+    use_ms_dropout=False,
     weight_decay=1e-4,
     backbone_weight_decay=5e-2,
     head_weight_decay=1e-5,
@@ -177,45 +185,20 @@ def train(
         image_std,
     )
 
-    if use_hf_model:
-        model = HFVitModel(
-            model_name,
-            hidden_size=hidden_size,
-            dropout_rate=dropout_rate,
-            activation=activation,
-            use_layernorm=use_layernorm,
-        )
+    model = HFVitModel(
+        model_name,
+        hidden_size=hidden_size,
+        dropout_rate=dropout_rate,
+        use_complex_head=use_complex_head,
+        use_ms_dropout=use_ms_dropout,
+    )
 
-        # NOTE: temp
-        # model.load_state_dict(
-        #     torch.load(
-        #         "./laion-CLIP-ViT-H-14-laion2B-s32B-b79K_on_v7_FT_1/laion-CLIP-ViT-H-14-laion2B-s32B-b79K_best.pth"
-        #     )
-        # )
-    else:
-        model = timm.create_model(model_name, pretrained=True, num_classes=384)
-
-        if dropout_rate > 0.0:
-            print("w head", dropout_rate, "use layernorm", use_layernorm)
-            if use_layernorm:
-                model.haed = torch.nn.Sequential(
-                    torch.nn.Dropout(p=dropout_rate),
-                    torch.nn.Linear(model.head.in_features, model.head.in_features),
-                    torch.nn.ReLU() if activation == "relu" else torch.nn.GELU(),
-                    torch.nn.Linear(model.head.in_features, 384),
-                    torch.nn.LayerNorm(384),
-                )
-            else:
-                model.haed = torch.nn.Sequential(
-                    torch.nn.Dropout(p=dropout_rate),
-                    torch.nn.Linear(model.head.in_features, model.head.in_features),
-                    torch.nn.ReLU() if activation == "relu" else torch.nn.GELU(),
-                    torch.nn.Linear(model.head.in_features, 384),
-                )
-        else:
-            print("wo head")
-
-        model.set_grad_checkpointing()
+    # NOTE: temp
+    # model.load_state_dict(
+    #     torch.load(
+    #         "./laion-CLIP-ViT-H-14-laion2B-s32B-b79K_on_v7_FT_1/laion-CLIP-ViT-H-14-laion2B-s32B-b79K_best.pth"
+    #     )
+    # )
 
     model.to(device)
     fp_log = open(os.path.join(output_path, "logs.txt"), "w", encoding="utf-8")
@@ -375,7 +358,7 @@ if __name__ == "__main__":
     class Config(BaseModel):
         seed: int = 42
 
-        memo = "on_v7_wo_head"
+        memo = "on_v7_clip_filter_aug"
         model_name: str = "openai/clip-vit-large-patch14-336"
 
         use_hf_model: bool = True
@@ -412,19 +395,18 @@ if __name__ == "__main__":
             image_mean = [0.48145466, 0.4578275, 0.40821073]
             image_std = [0.26862954, 0.26130258, 0.27577711]
 
-        #: head 유무를 dropout rate > 0.0로 판단
-        dropout_rate: float = -0.1
-        activation: str = "gelu"
-        use_layernorm: bool = False
+        dropout_rate: float = 0.1
+        use_ms_dropout: bool = False
+        use_complex_head: bool = False
 
         batch_size: int = 256
         grad_accum_steps = 1
-        num_epochs: int = 3
+        num_epochs: int = 3  # TODO 2ep
         lr: float = 1e-4
         use_layerwise_lr_decay: bool = True
         scheduler_type: str = "CosineSchedulerWithWarmup"
         weight_decay = 1e-4  # SGD용
-        backbone_weight_decay = 0.001  # AdamW for 백본 일반화
+        backbone_weight_decay = 1e-3  # AdamW for 백본 일반화
         head_weight_decay = 1e-5  # AdamW for 헤드 자유도
         milestones = [num_epochs // 3, 2 * num_epochs // 3]  # MultiStepLR용
         warmup_steps: int = 200
@@ -464,13 +446,25 @@ if __name__ == "__main__":
         print(cfg_str)
         f.write(cfg_str)
 
+    # skip list for train
+    train_skip_indices = []
+    with open("./resources/dissim_pairs_all_v7_train_cont.txt") as f:
+        for line in f:
+            idx, score, _, _ = line.strip().split("\t")
+            if float(score) < 0.3:
+                train_skip_indices.append(int(idx))
+    print("train skip indices count:", len(train_skip_indices))
+    train_skip_indices = set(train_skip_indices)
+
     with open(os.path.join(config.train_dir, config.train_metadata_file)) as f:
         train_data = {
             "filepath": [],
             "prompt": [],
         }
-        for line in f:
+        for idx, line in enumerate(f):
             item = json.loads(line)
+            if idx in train_skip_indices:
+                continue
             train_data["filepath"].append(
                 os.path.join(config.train_dir, item["file_name"])
             )
@@ -480,19 +474,34 @@ if __name__ == "__main__":
 
         train_df = pd.DataFrame.from_dict(train_data)
 
+    # skip list for valid
+    valid_skip_indices = []
+    with open("./resources/dissim_pairs_025_v7_validation.txt") as f:
+        for line in f:
+            idx, score, _, _ = line.strip().split("\t")
+            if float(score) < 0.3:
+                valid_skip_indices.append(int(idx))
+    print("valid skip indices count:", len(valid_skip_indices))
+    valid_skip_indices = set(valid_skip_indices)
+
     with open(os.path.join(config.valid_dir, config.valid_metadata_file)) as f:
         validation_data = {
             "filepath": [],
             "prompt": [],
         }
-        for line in f:
+        for idx, line in enumerate(f):
             item = json.loads(line)
+            if idx in valid_skip_indices:
+                continue
             validation_data["filepath"].append(
                 os.path.join(config.valid_dir, item["file_name"])
             )
             validation_data["prompt"].append(item["text"])
 
         valid_df = pd.DataFrame.from_dict(validation_data)
+
+    print("train len", len(train_df))
+    print("valid len", len(valid_df))
 
     train(
         train_df,
@@ -504,20 +513,19 @@ if __name__ == "__main__":
         config.num_epochs,
         config.lr,
         config.use_layerwise_lr_decay,
-        config.dropout_rate,
         config.output_path,
         config.scheduler_type,
         config.warmup_steps,
         config.use_aug,
         config.use_amp,
-        config.use_hf_model,
         config.image_mean,
         config.image_std,
-        config.activation,
         config.hidden_size,
-        config.use_layernorm,
-        config.weight_decay,
-        config.backbone_weight_decay,
-        config.head_weight_decay,
-        config.milestones,
+        config.dropout_rate,
+        use_complex_head=config.use_complex_head,
+        use_ms_dropout=config.use_ms_dropout,
+        weight_decay=config.weight_decay,
+        backbone_weight_decay=config.backbone_weight_decay,
+        head_weight_decay=config.head_weight_decay,
+        milestones=config.milestones,
     )

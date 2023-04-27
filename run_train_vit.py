@@ -353,6 +353,42 @@ def train(
         )
 
 
+def bulid_dataframe(
+    images_dir,
+    clip_score_file_path,
+    thres=0.3,
+    metadata_fn="metadata.jsonl",
+    target_label="text",
+):
+    metadata_path = os.path.join(images_dir, metadata_fn)
+    print(f"[build_dataframe] process metadata_path: {metadata_path}")
+    skip_fns = []
+    with open(clip_score_file_path) as f:
+        for line in f:
+            idx, score, _, filename = line.strip().split("\t")
+            if float(score) < thres:
+                skip_fns.append(filename)
+    print("- skip indices count:", len(skip_fns))
+    skip_fns = set(skip_fns)
+
+    with open(metadata_path) as f:
+        data_dict = {
+            "filepath": [],
+            "prompt": [],
+        }
+        for idx, line in enumerate(f):
+            item = json.loads(line)
+            if item["file_name"] in skip_fns:
+                continue
+
+            data_dict["filepath"].append(os.path.join(images_dir, item["file_name"]))
+            data_dict["prompt"].append(item[target_label])  # text or orig_text
+
+        df = pd.DataFrame.from_dict(data_dict)
+
+    return df
+
+
 if __name__ == "__main__":
 
     class Config(BaseModel):
@@ -423,6 +459,20 @@ if __name__ == "__main__":
         train_dir: str = "./diffusion/image-to-prompt-train-valid-split-v7/train"
         valid_dir: str = "./diffusion/image-to-prompt-train-valid-split-v7/validation"
 
+        extra_train_dirs = [
+            "./diffusion/chatgpt-23385/images",
+            "./diffusion/ddb2m-orig-126351/images",
+            "./diffusion/gpt-generated-287255/images",
+            "./diffusion/openprompts2-21499/images",
+        ]
+
+        extra_clip_score_file_paths = [
+            "./resources/dissim_pairs_all_chatgpt.txt",
+            "./resources/dissim_pairs_all_ddb2m.txt",
+            "./resources/dissim_pairs_all_gpt_merged.txt",
+            "./resources/dissim_pairs_all_openprompts2.txt",
+        ]
+
     config = Config()
 
     assert config.scheduler_type in [
@@ -446,59 +496,31 @@ if __name__ == "__main__":
         print(cfg_str)
         f.write(cfg_str)
 
-    # skip list for train
-    train_skip_indices = []
-    with open("./resources/dissim_pairs_all_v7_train_cont.txt") as f:
-        for line in f:
-            idx, score, _, _ = line.strip().split("\t")
-            if float(score) < 0.3:
-                train_skip_indices.append(int(idx))
-    print("train skip indices count:", len(train_skip_indices))
-    train_skip_indices = set(train_skip_indices)
+    train_df = bulid_dataframe(
+        config.train_dir,
+        "./resources/dissim_pairs_all_v7_train_cont.txt",
+        thres=0.3,
+    )
 
-    with open(os.path.join(config.train_dir, config.train_metadata_file)) as f:
-        train_data = {
-            "filepath": [],
-            "prompt": [],
-        }
-        for idx, line in enumerate(f):
-            item = json.loads(line)
-            if idx in train_skip_indices:
-                continue
-            train_data["filepath"].append(
-                os.path.join(config.train_dir, item["file_name"])
+    valid_df = bulid_dataframe(
+        config.valid_dir,
+        "./resources/dissim_pairs_025_v7_validation.txt",
+        thres=0.3,
+    )
+
+    extra_dfs = [train_df]
+    for data_dir, clip_score_file_path in zip(
+        config.extra_train_dirs, config.extra_clip_score_file_paths
+    ):
+        extra_dfs.append(
+            bulid_dataframe(
+                data_dir,
+                clip_score_file_path,
+                thres=0.3,
             )
-            train_data["prompt"].append(
-                item[config.target_label_name]
-            )  # text or orig_text
+        )
 
-        train_df = pd.DataFrame.from_dict(train_data)
-
-    # skip list for valid
-    valid_skip_indices = []
-    with open("./resources/dissim_pairs_025_v7_validation.txt") as f:
-        for line in f:
-            idx, score, _, _ = line.strip().split("\t")
-            if float(score) < 0.3:
-                valid_skip_indices.append(int(idx))
-    print("valid skip indices count:", len(valid_skip_indices))
-    valid_skip_indices = set(valid_skip_indices)
-
-    with open(os.path.join(config.valid_dir, config.valid_metadata_file)) as f:
-        validation_data = {
-            "filepath": [],
-            "prompt": [],
-        }
-        for idx, line in enumerate(f):
-            item = json.loads(line)
-            if idx in valid_skip_indices:
-                continue
-            validation_data["filepath"].append(
-                os.path.join(config.valid_dir, item["file_name"])
-            )
-            validation_data["prompt"].append(item["text"])
-
-        valid_df = pd.DataFrame.from_dict(validation_data)
+    train_df = pd.concat(extra_dfs).reset_index(drop=True)
 
     print("train len", len(train_df))
     print("valid len", len(valid_df))

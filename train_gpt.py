@@ -24,6 +24,7 @@ def fine_tune_gpt2(
         eos_token=eos,
         pad_token=pad,
     )
+    model.resize_token_embeddings(len(tokenizer))
 
     train_dataset = TextDataset(
         tokenizer=tokenizer, file_path=train_file, block_size=max_seq_length
@@ -86,19 +87,19 @@ if __name__ == "__main__":
 
     with open("./diffusion/gpt_train.txt", "w", encoding="utf-8") as f:
         for line in train_data:
-            f.write(bos + line.replace("\n", "<|endoftext|>\n"))
+            f.write(bos + line.replace("\n", f"{eos}\n"))
 
     with open("./diffusion/gpt_valid.txt", "w", encoding="utf-8") as f:
         for line in valid_data:
-            f.write(bos + line.replace("\n", "<|endoftext|>\n"))
+            f.write(bos + line.replace("\n", f"{eos}\n"))
 
     # model_name = "distilgpt2"  # GPT-2 모델 사용
     train_file = "./diffusion/gpt_train.txt"
     valid_file = "./diffusion/gpt_valid.txt"
-    output_dir = "./diffusion/gpt-outputs-gpt2-2/"
+    output_dir = "./diffusion/gpt-outputs-gpt2-3/"
 
     model_name = "gpt2"  # "distilgpt2"
-    epochs = 5
+    epochs = 10
     batch_size = 128
     max_seq_length = 77
 

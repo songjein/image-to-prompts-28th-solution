@@ -13,7 +13,8 @@ if __name__ == "__main__":
 
     cosim = torch.nn.CosineSimilarity(dim=1, eps=1e-7)
 
-    root = "diffusion/image-to-prompt-train-valid-split-v7/train"
+    # root = "diffusion/image-to-prompt-train-valid-split-v7/train"
+    root = "diffusion/openprompts2/openprompts2"
 
     items = []
     with open(os.path.join(root, "metadata.jsonl")) as f:
@@ -22,7 +23,9 @@ if __name__ == "__main__":
 
     batch_size = 16
 
-    with open("./resources/dissim_pairs_025_v7_train.txt", "w", encoding="utf-8") as f:
+    with open(
+        "./resources/dissim_pairs_all_openprompts2.txt", "w", encoding="utf-8"
+    ) as f:
         for start_index in range(0, len(items), batch_size):
             pixel_values = None
             texts = []
@@ -53,11 +56,10 @@ if __name__ == "__main__":
             for in_batch_index, score in enumerate(scores):
                 index = start_index + in_batch_index
 
-                if score < 0.25:
-                    score = float(score)
-                    item = items[index]
-                    text = item["text"]
-                    file_path = item["file_name"]
-                    record = f"{index}\t{score}\t{text}\t{file_path}\n"
-                    f.write(record)
-                    print(record)
+                score = float(score)
+                item = items[index]
+                text = item["text"]
+                file_path = item["file_name"]
+                record = f"{index}\t{score}\t{text}\t{file_path}\n"
+                f.write(record)
+                print(record)

@@ -394,12 +394,8 @@ if __name__ == "__main__":
     class Config(BaseModel):
         seed: int = 42
 
-        memo = "on_v7_clip_filter_aug"
-        model_name: str = "openai/clip-vit-large-patch14-336"
-
-        use_hf_model: bool = True
-        if use_hf_model:
-            model_name = "laion/CLIP-ViT-H-14-laion2B-s32B-b79K"  # "facebook/convnextv2-huge-22k-384" or 512
+        memo = "on_msdv7_msdo"
+        model_name = "laion/CLIP-ViT-L-14-laion2B-s32B-b82K"
 
         hidden_size = 768
         image_size: Tuple[int, int] = (224, 224)
@@ -432,12 +428,12 @@ if __name__ == "__main__":
             image_std = [0.26862954, 0.26130258, 0.27577711]
 
         dropout_rate: float = 0.1
-        use_ms_dropout: bool = False
+        use_ms_dropout: bool = True
         use_complex_head: bool = False
 
         batch_size: int = 256
         grad_accum_steps = 1
-        num_epochs: int = 3  # TODO 2ep
+        num_epochs: int = 2
         lr: float = 1e-4
         use_layerwise_lr_decay: bool = True
         scheduler_type: str = "CosineSchedulerWithWarmup"
@@ -453,24 +449,38 @@ if __name__ == "__main__":
         use_amp: bool = True
 
         output_path: str = f"{model_name.replace('/', '-')}_{memo}"
-        train_metadata_file: str = "metadata.jsonl"
-        valid_metadata_file: str = "metadata.jsonl"
 
         train_dir: str = "./diffusion/image-to-prompt-train-valid-split-v7/train"
         valid_dir: str = "./diffusion/image-to-prompt-train-valid-split-v7/validation"
 
-        extra_train_dirs = [
-            "./diffusion/chatgpt-23385/images",
-            "./diffusion/ddb2m-orig-126351/images",
-            "./diffusion/gpt-generated-287255/images",
-            "./diffusion/openprompts2-21499/images",
+        extra_train_dirs_with_clip_score_filepaths = [
+            (
+                "./diffusion/ddb2m-orig-126351/images",
+                "./resources/dissim_pairs_all_ddb2m.txt",
+            ),
+            (
+                "./diffusion/gpt-generated-287255/images",
+                "./resources/dissim_pairs_all_gpt_merged.txt",
+            ),
+            (
+                "./diffusion/openprompts2-21499/images",
+                "./resources/dissim_pairs_all_openprompts2.txt",
+            ),
+            (
+                "./diffusion/chatgpt-23385/images",
+                "./resources/dissim_pairs_all_chatgpt.txt",
+            ),
+            (
+                "./diffusion/sd2hdcd/images",
+                "./resources/dissim_pairs_all_sd2hdcd.txt",
+            ),
         ]
 
-        extra_clip_score_file_paths = [
-            "./resources/dissim_pairs_all_chatgpt.txt",
-            "./resources/dissim_pairs_all_ddb2m.txt",
-            "./resources/dissim_pairs_all_gpt_merged.txt",
-            "./resources/dissim_pairs_all_openprompts2.txt",
+        extra_valid_dirs_with_clip_score_filepaths = [
+            (
+                "./diffusion/gustavosta-valid/images",
+                "./resources/dissim_pairs_all_gustavosta_valid.txt",
+            ),
         ]
 
     config = Config()
@@ -502,17 +512,12 @@ if __name__ == "__main__":
         thres=0.3,
     )
 
-    valid_df = bulid_dataframe(
-        config.valid_dir,
-        "./resources/dissim_pairs_025_v7_validation.txt",
-        thres=0.3,
-    )
-
-    extra_dfs = [train_df]
-    for data_dir, clip_score_file_path in zip(
-        config.extra_train_dirs, config.extra_clip_score_file_paths
-    ):
-        extra_dfs.append(
+    extra_train_dfs = [train_df]
+    for (
+        data_dir,
+        clip_score_file_path,
+    ) in config.extra_train_dirs_with_clip_score_filepaths:
+        extra_train_dfs.append(
             bulid_dataframe(
                 data_dir,
                 clip_score_file_path,
@@ -520,7 +525,28 @@ if __name__ == "__main__":
             )
         )
 
-    train_df = pd.concat(extra_dfs).reset_index(drop=True)
+    train_df = pd.concat(extra_train_dfs).reset_index(drop=True)
+
+    valid_df = bulid_dataframe(
+        config.valid_dir,
+        "./resources/dissim_pairs_025_v7_validation.txt",
+        thres=0.3,
+    )
+
+    extra_valid_dfs = [valid_df]
+    for (
+        data_dir,
+        clip_score_file_path,
+    ) in config.extra_valid_dirs_with_clip_score_filepaths:
+        extra_valid_dfs.append(
+            bulid_dataframe(
+                data_dir,
+                clip_score_file_path,
+                thres=0.3,
+            )
+        )
+
+    valid_df = pd.concat(extra_valid_dfs).reset_index(drop=True)
 
     print("train len", len(train_df))
     print("valid len", len(valid_df))

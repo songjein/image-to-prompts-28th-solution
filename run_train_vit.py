@@ -368,6 +368,8 @@ def bulid_dataframe(
         }
         for idx, line in enumerate(f):
             item = json.loads(line)
+            if "hdcd" in item["file_name"] or "chatgpt" in item["file_name"]:
+                continue
             data_dict["filepath"].append(os.path.join(images_dir, item["file_name"]))
             data_dict["prompt"].append(item[target_label])  # text or orig_text
         df = pd.DataFrame.from_dict(data_dict)
@@ -380,8 +382,8 @@ if __name__ == "__main__":
     class Config(BaseModel):
         seed: int = 42
 
-        memo = "on_msdv7_msdo"
-        model_name = "laion/CLIP-ViT-L-14-laion2B-s32B-b82K"
+        memo = "on_v7e"
+        model_name = "laion/CLIP-ViT-H-14-laion2B-s32B-b79K"
 
         hidden_size = 768
         image_size: Tuple[int, int] = (224, 224)
@@ -439,8 +441,11 @@ if __name__ == "__main__":
         train_dir: str = "./diffusion/image-to-prompt-train-valid-split-v7/train"
         valid_dir: str = "./diffusion/image-to-prompt-train-valid-split-v7/validation"
 
-        extra_train_dirs = ["image-to-prompt-extra-v1/train"]
-        extra_valid_dirs = ["image-to-prompt-extra-v1/validation"]
+        extra_train_dirs = [
+            "./diffusion/image-to-prompt-extra-v1/train",
+            "./diffusion/image-to-prompt-extra-v2/train",
+        ]
+        extra_valid_dirs = ["./diffusion/image-to-prompt-extra-v1/validation"]
 
     config = Config()
 
@@ -465,18 +470,20 @@ if __name__ == "__main__":
         print(cfg_str)
         f.write(cfg_str)
 
-    train_df = bulid_dataframe(config.train_dir)
+    train_df = bulid_dataframe(config.train_dir, target_label=config.target_label_name)
 
     extra_train_dfs = [train_df]
-    for data_dir in extra_train_dirs:
-        extra_train_dfs.append(bulid_dataframe(data_dir))
+    for data_dir in config.extra_train_dirs:
+        extra_train_dfs.append(
+            bulid_dataframe(data_dir, target_label=config.target_label_name)
+        )
 
     train_df = pd.concat(extra_train_dfs).reset_index(drop=True)
 
     valid_df = bulid_dataframe(config.valid_dir)
 
     extra_valid_dfs = [valid_df]
-    for data_dir in extra_valid_dirs:
+    for data_dir in config.extra_valid_dirs:
         extra_valid_dfs.append(bulid_dataframe(data_dir))
 
     valid_df = pd.concat(extra_valid_dfs).reset_index(drop=True)

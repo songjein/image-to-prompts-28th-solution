@@ -355,21 +355,11 @@ def train(
 
 def bulid_dataframe(
     images_dir,
-    clip_score_file_path,
-    thres=0.3,
     metadata_fn="metadata.jsonl",
     target_label="text",
 ):
     metadata_path = os.path.join(images_dir, metadata_fn)
     print(f"[build_dataframe] process metadata_path: {metadata_path}")
-    skip_fns = []
-    with open(clip_score_file_path) as f:
-        for line in f:
-            idx, score, _, filename = line.strip().split("\t")
-            if float(score) < thres:
-                skip_fns.append(filename)
-    print("- skip indices count:", len(skip_fns))
-    skip_fns = set(skip_fns)
 
     with open(metadata_path) as f:
         data_dict = {
@@ -378,12 +368,8 @@ def bulid_dataframe(
         }
         for idx, line in enumerate(f):
             item = json.loads(line)
-            if item["file_name"] in skip_fns:
-                continue
-
             data_dict["filepath"].append(os.path.join(images_dir, item["file_name"]))
             data_dict["prompt"].append(item[target_label])  # text or orig_text
-
         df = pd.DataFrame.from_dict(data_dict)
 
     return df
@@ -453,35 +439,8 @@ if __name__ == "__main__":
         train_dir: str = "./diffusion/image-to-prompt-train-valid-split-v7/train"
         valid_dir: str = "./diffusion/image-to-prompt-train-valid-split-v7/validation"
 
-        extra_train_dirs_with_clip_score_filepaths = [
-            (
-                "./diffusion/ddb2m-orig-126351/images",
-                "./resources/dissim_pairs_all_ddb2m.txt",
-            ),
-            (
-                "./diffusion/gpt-generated-287255/images",
-                "./resources/dissim_pairs_all_gpt_merged.txt",
-            ),
-            (
-                "./diffusion/openprompts2-21499/images",
-                "./resources/dissim_pairs_all_openprompts2.txt",
-            ),
-            (
-                "./diffusion/chatgpt-23385/images",
-                "./resources/dissim_pairs_all_chatgpt.txt",
-            ),
-            (
-                "./diffusion/sd2hdcd/images",
-                "./resources/dissim_pairs_all_sd2hdcd.txt",
-            ),
-        ]
-
-        extra_valid_dirs_with_clip_score_filepaths = [
-            (
-                "./diffusion/gustavosta-valid/images",
-                "./resources/dissim_pairs_all_gustavosta_valid.txt",
-            ),
-        ]
+        extra_train_dirs = ["image-to-prompt-extra-v1/train"]
+        extra_valid_dirs = ["image-to-prompt-extra-v1/validation"]
 
     config = Config()
 
@@ -506,45 +465,19 @@ if __name__ == "__main__":
         print(cfg_str)
         f.write(cfg_str)
 
-    train_df = bulid_dataframe(
-        config.train_dir,
-        "./resources/dissim_pairs_all_v7_train_cont.txt",
-        thres=0.3,
-    )
+    train_df = bulid_dataframe(config.train_dir)
 
     extra_train_dfs = [train_df]
-    for (
-        data_dir,
-        clip_score_file_path,
-    ) in config.extra_train_dirs_with_clip_score_filepaths:
-        extra_train_dfs.append(
-            bulid_dataframe(
-                data_dir,
-                clip_score_file_path,
-                thres=0.3,
-            )
-        )
+    for data_dir in extra_train_dirs:
+        extra_train_dfs.append(bulid_dataframe(data_dir))
 
     train_df = pd.concat(extra_train_dfs).reset_index(drop=True)
 
-    valid_df = bulid_dataframe(
-        config.valid_dir,
-        "./resources/dissim_pairs_025_v7_validation.txt",
-        thres=0.3,
-    )
+    valid_df = bulid_dataframe(config.valid_dir)
 
     extra_valid_dfs = [valid_df]
-    for (
-        data_dir,
-        clip_score_file_path,
-    ) in config.extra_valid_dirs_with_clip_score_filepaths:
-        extra_valid_dfs.append(
-            bulid_dataframe(
-                data_dir,
-                clip_score_file_path,
-                thres=0.3,
-            )
-        )
+    for data_dir in extra_valid_dirs:
+        extra_valid_dfs.append(bulid_dataframe(data_dir))
 
     valid_df = pd.concat(extra_valid_dfs).reset_index(drop=True)
 

@@ -29,7 +29,7 @@ class LayerwiseDecayAdamW(torch.optim.Optimizer):
         self,
         model,
         base_lr,
-        min_lr=1e-6,
+        min_lr=1e-8,
         backbone_weight_decay=1e-3,
         head_weight_decay=1e-5,
         head_lr_factor=10.0,
@@ -196,7 +196,7 @@ def train(
     # NOTE: temp
     # model.load_state_dict(
     #     torch.load(
-    #         "./laion-CLIP-ViT-H-14-laion2B-s32B-b79K_on_v7_FT_1/laion-CLIP-ViT-H-14-laion2B-s32B-b79K_best.pth"
+    #         "./openai-clip-vit-large-patch14-336_on_v7e_extra_gpt_data/openai-clip-vit-large-patch14-336_1ep.pth"
     #     )
     # )
 
@@ -368,7 +368,7 @@ def bulid_dataframe(
         }
         for idx, line in enumerate(f):
             item = json.loads(line)
-            if "hdcd" in item["file_name"] or "chatgpt" in item["file_name"]:
+            if "hdcd" in item["file_name"]:  # or "chatgpt" in item["file_name"]:
                 continue
             data_dict["filepath"].append(os.path.join(images_dir, item["file_name"]))
             data_dict["prompt"].append(item[target_label])  # text or orig_text
@@ -382,7 +382,7 @@ if __name__ == "__main__":
     class Config(BaseModel):
         seed: int = 42
 
-        memo = "on_v7e"
+        memo = "on_v7e-2ep"
         model_name = "laion/CLIP-ViT-H-14-laion2B-s32B-b79K"
 
         hidden_size = 768
@@ -411,12 +411,13 @@ if __name__ == "__main__":
             model_name == "vit_huge_patch14_224_clip_laion2b"
             or model_name == "laion/CLIP-ViT-H-14-laion2B-s32B-b79K"
             or model_name == "openai/clip-vit-large-patch14-336"
+            or model_name == "laion/CLIP-ViT-B-32-laion2B-s34B-b79K"
         ):
             image_mean = [0.48145466, 0.4578275, 0.40821073]
             image_std = [0.26862954, 0.26130258, 0.27577711]
 
         dropout_rate: float = 0.1
-        use_ms_dropout: bool = True
+        use_ms_dropout: bool = False
         use_complex_head: bool = False
 
         batch_size: int = 256
@@ -426,7 +427,7 @@ if __name__ == "__main__":
         use_layerwise_lr_decay: bool = True
         scheduler_type: str = "CosineSchedulerWithWarmup"
         weight_decay = 1e-4  # SGD용
-        backbone_weight_decay = 1e-3  # AdamW for 백본 일반화
+        backbone_weight_decay = 1e-3  # 1e-3  # AdamW for 백본 일반화
         head_weight_decay = 1e-5  # AdamW for 헤드 자유도
         milestones = [num_epochs // 3, 2 * num_epochs // 3]  # MultiStepLR용
         warmup_steps: int = 200
@@ -444,6 +445,7 @@ if __name__ == "__main__":
         extra_train_dirs = [
             "./diffusion/image-to-prompt-extra-v1/train",
             "./diffusion/image-to-prompt-extra-v2/train",
+            "./diffusion/gpt-generated-sd2-v6-v7/images",
         ]
         extra_valid_dirs = ["./diffusion/image-to-prompt-extra-v1/validation"]
 

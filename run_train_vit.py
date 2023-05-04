@@ -382,7 +382,7 @@ if __name__ == "__main__":
     class Config(BaseModel):
         seed: int = 42
 
-        memo = "on_v7e-2ep"
+        memo = "on_v7e"
         model_name = "laion/CLIP-ViT-H-14-laion2B-s32B-b79K"
 
         hidden_size = 768
@@ -422,12 +422,12 @@ if __name__ == "__main__":
 
         batch_size: int = 256
         grad_accum_steps = 1
-        num_epochs: int = 2
+        num_epochs: int = 3
         lr: float = 1e-4
         use_layerwise_lr_decay: bool = True
         scheduler_type: str = "CosineSchedulerWithWarmup"
         weight_decay = 1e-4  # SGD용
-        backbone_weight_decay = 1e-3  # 1e-3  # AdamW for 백본 일반화
+        backbone_weight_decay = 1e-4  # 1e-3  # AdamW for 백본 일반화
         head_weight_decay = 1e-5  # AdamW for 헤드 자유도
         milestones = [num_epochs // 3, 2 * num_epochs // 3]  # MultiStepLR용
         warmup_steps: int = 200
@@ -446,6 +446,8 @@ if __name__ == "__main__":
             "./diffusion/image-to-prompt-extra-v1/train",
             "./diffusion/image-to-prompt-extra-v2/train",
             "./diffusion/gpt-generated-sd2-v6-v7/images",
+            "./diffusion/diffusiondb-extra/images",
+            "./diffusion/openprompts-extra/images",
         ]
         extra_valid_dirs = ["./diffusion/image-to-prompt-extra-v1/validation"]
 

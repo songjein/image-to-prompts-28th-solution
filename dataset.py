@@ -61,6 +61,7 @@ class DiffusionDataset(Dataset):
         row = self.df.iloc[idx]
 
         prompt = row["prompt"]
+        orig_prompt = row["orig_prompt"]
         image = cv2.imread(row["filepath"])
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
@@ -76,21 +77,29 @@ class DiffusionDataset(Dataset):
         image = image.transpose(2, 0, 1)
         image = torch.tensor(image, dtype=torch.float)
 
-        return image, prompt
+        return image, prompt, orig_prompt
 
 
 class DiffusionCollator:
-    def __init__(self):
+    def __init__(self, mix_embeds=False):
         self.st_model = SentenceTransformer(
             "sentence-transformers/all-MiniLM-L6-v2", device="cpu"
         )
+        self.mix_embeds = mix_embeds
 
     def __call__(self, batch):
-        images, prompts = zip(*batch)
+        images, prompts, orig_prompts = zip(*batch)
         images = torch.stack(images)
         prompt_embeddings = self.st_model.encode(
             prompts, show_progress_bar=False, convert_to_tensor=True
         )
+
+        if self.mix_embeds:
+            orig_prompt_embeddings = self.st_model.encode(
+                orig_prompts, show_progress_bar=False, convert_to_tensor=True
+            )
+            return images, (prompt_embeddings + orig_prompt_embeddings) / 2
+
         return images, prompt_embeddings
 
 
@@ -102,6 +111,7 @@ def get_dataloaders(
     use_aug,
     image_mean,
     image_std,
+    mix_embeds=False,
 ):
     train_transform_w_haug = None
     train_transform_wo_haug = None
@@ -130,7 +140,8 @@ def get_dataloaders(
         image_mean,
         image_std,
     )
-    collator = DiffusionCollator()
+    train_collator = DiffusionCollator(mix_embeds=mix_embeds)
+    valid_collator = DiffusionCollator(mix_embeds=False)
 
     dataloaders = {}
     dataloaders["train"] = DataLoader(
@@ -140,7 +151,7 @@ def get_dataloaders(
         pin_memory=True,
         num_workers=4,
         drop_last=True,
-        collate_fn=collator,
+        collate_fn=train_collator,
     )
     dataloaders["val"] = DataLoader(
         dataset=val_dataset,
@@ -149,6 +160,6 @@ def get_dataloaders(
         pin_memory=True,
         num_workers=4,
         drop_last=False,
-        collate_fn=collator,
+        collate_fn=valid_collator,
     )
     return dataloaders

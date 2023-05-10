@@ -29,7 +29,7 @@ class LayerwiseDecayAdamW(torch.optim.Optimizer):
         self,
         model,
         base_lr,
-        min_lr=1e-8,
+        min_lr=1e-8,  # 1e-6으로도 해보고 싶긴 함
         backbone_weight_decay=1e-3,
         head_weight_decay=1e-5,
         head_lr_factor=10.0,
@@ -148,6 +148,39 @@ def cosine_similarity(y_trues, y_preds):
     )
 
 
+def valid(model, dataloaders, device, criterion, epoch, fp_log):
+    val_meters = {
+        "loss": AverageMeter(),
+        "cos": AverageMeter(),
+    }
+    model.eval()
+    for X, y in tqdm(dataloaders):
+        X, y = X.to(device), y.to(device)
+
+        with torch.no_grad():
+            X_out = model(X)
+            target = torch.ones(X.size(0)).to(device)
+            loss = criterion(X_out, y, target)
+
+            val_loss = loss.item()
+            val_cos = cosine_similarity(
+                X_out.detach().cpu().numpy(), y.detach().cpu().numpy()
+            )
+
+        val_meters["loss"].update(val_loss, n=X.size(0))
+        val_meters["cos"].update(val_cos, n=X.size(0))
+
+    log = "Epoch {:d} / val/loss={:.4f}, val/cos={:.4f}".format(
+        epoch + 1, val_meters["loss"].avg, val_meters["cos"].avg
+    )
+    print(log)
+    fp_log.write(log + "\n")
+
+    torch.cuda.empty_cache()
+
+    return val_meters["loss"].avg, val_meters["cos"].avg
+
+
 def train(
     train_df,
     valid_df,
@@ -161,6 +194,7 @@ def train(
     output_path,
     scheduler_type,
     warmup_steps,
+    valid_steps,
     use_aug,
     use_amp,
     image_mean,
@@ -173,6 +207,7 @@ def train(
     backbone_weight_decay=5e-2,
     head_weight_decay=1e-5,
     milestones=[],
+    mix_embeds=False,
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dataloaders = get_dataloaders(
@@ -183,6 +218,7 @@ def train(
         use_aug,
         image_mean,
         image_std,
+        mix_embeds=mix_embeds,
     )
 
     model = HFVitModel(
@@ -259,16 +295,17 @@ def train(
             "loss": AverageMeter(),
             "cos": AverageMeter(),
         }
-        model.train()
 
         data_loader_tqdm = tqdm(dataloaders["train"], file=sys.stdout)
         for X, y in data_loader_tqdm:
+            model.train()
+
             accumulated_steps += 1
             X, y = X.to(device), y.to(device)
 
             optimizer.zero_grad()
 
-            with autocast(enabled=use_amp, dtype=torch.float16):
+            with autocast(enabled=use_amp):
                 X_out = model(X)
                 target = torch.ones(X.size(0)).to(device)
                 loss = criterion(X_out, y, target)
@@ -304,6 +341,18 @@ def train(
                 train_meters["cos"].update(trn_cos, n=X.size(0))
                 logging_loss = torch.tensor(0.0).cuda()
 
+            if valid_steps > 0 and step % valid_steps == 0:
+                val_loss, val_cos = valid(
+                    model, dataloaders["val"], device, criterion, epoch, fp_log
+                )
+
+                if val_cos > best_score:
+                    best_score = val_cos
+                    torch.save(
+                        model.state_dict(),
+                        f"{output_path}/{model_name.replace('/', '-')}_best.pth",
+                    )
+
         if scheduler_type in ["MultiStepLR", "CosineAnnealingLR"]:
             scheduler.step()
 
@@ -313,35 +362,12 @@ def train(
         print(log)
         fp_log.write(log + "\n")
 
-        val_meters = {
-            "loss": AverageMeter(),
-            "cos": AverageMeter(),
-        }
-        model.eval()
-        for X, y in tqdm(dataloaders["val"]):
-            X, y = X.to(device), y.to(device)
-
-            with torch.no_grad():
-                X_out = model(X)
-                target = torch.ones(X.size(0)).to(device)
-                loss = criterion(X_out, y, target)
-
-                val_loss = loss.item()
-                val_cos = cosine_similarity(
-                    X_out.detach().cpu().numpy(), y.detach().cpu().numpy()
-                )
-
-            val_meters["loss"].update(val_loss, n=X.size(0))
-            val_meters["cos"].update(val_cos, n=X.size(0))
-
-        log = "Epoch {:d} / val/loss={:.4f}, val/cos={:.4f}".format(
-            epoch + 1, val_meters["loss"].avg, val_meters["cos"].avg
+        val_loss, val_cos = valid(
+            model, dataloaders["val"], device, criterion, epoch, fp_log
         )
-        print(log)
-        fp_log.write(log + "\n")
 
-        if val_meters["cos"].avg > best_score:
-            best_score = val_meters["cos"].avg
+        if val_cos > best_score:
+            best_score = val_cos
             torch.save(
                 model.state_dict(),
                 f"{output_path}/{model_name.replace('/', '-')}_best.pth",
@@ -365,13 +391,15 @@ def bulid_dataframe(
         data_dict = {
             "filepath": [],
             "prompt": [],
+            "orig_prompt": [],
         }
         for idx, line in enumerate(f):
             item = json.loads(line)
-            if "hdcd" in item["file_name"]:  # or "chatgpt" in item["file_name"]:
+            if "hdcd" in item["file_name"]:
                 continue
             data_dict["filepath"].append(os.path.join(images_dir, item["file_name"]))
-            data_dict["prompt"].append(item[target_label])  # text or orig_text
+            data_dict["prompt"].append(item[target_label])
+            data_dict["orig_prompt"].append(item["orig_text"])
         df = pd.DataFrame.from_dict(data_dict)
 
     return df
@@ -382,8 +410,8 @@ if __name__ == "__main__":
     class Config(BaseModel):
         seed: int = 42
 
-        memo = "on_v7e"
-        model_name = "laion/CLIP-ViT-H-14-laion2B-s32B-b79K"
+        memo = "on_v7_11data"
+        model_name = "laion/CLIP-ViT-L-14-laion2B-s32B-b82K"
 
         hidden_size = 768
         image_size: Tuple[int, int] = (224, 224)
@@ -395,6 +423,12 @@ if __name__ == "__main__":
             image_size = (336, 336)
         elif model_name == "laion/CLIP-ViT-H-14-laion2B-s32B-b79K":
             hidden_size = 1280
+        elif model_name == "microsoft/swin-large-patch4-window7-224-in22k":
+            hidden_size = 1536
+            image_size = (224, 224)
+        elif model_name == "microsoft/swinv2-large-patch4-window12-192-22k":
+            hidden_size = 1536
+            image_size = (192, 192)
         elif model_name == "microsoft/swin-large-patch4-window12-384-in22k":
             hidden_size = 1536
             image_size = (384, 384)
@@ -431,16 +465,19 @@ if __name__ == "__main__":
         head_weight_decay = 1e-5  # AdamW for 헤드 자유도
         milestones = [num_epochs // 3, 2 * num_epochs // 3]  # MultiStepLR용
         warmup_steps: int = 200
+        valid_steps: int = 1000
 
-        target_label_name = "text"  # text or orig_text
+        target_label_name = "text"
+
+        mix_embeds = False
 
         use_aug: bool = True
         use_amp: bool = True
 
         output_path: str = f"{model_name.replace('/', '-')}_{memo}"
 
-        train_dir: str = "./diffusion/image-to-prompt-train-valid-split-v7/train"
-        valid_dir: str = "./diffusion/image-to-prompt-train-valid-split-v7/validation"
+        train_dir: str = "./diffusion/image-to-prompt-train-valid-split-v7-a/train"
+        valid_dir: str = "./diffusion/image-to-prompt-train-valid-split-v7-a/validation"
 
         extra_train_dirs = [
             "./diffusion/image-to-prompt-extra-v1/train",
@@ -448,6 +485,11 @@ if __name__ == "__main__":
             "./diffusion/gpt-generated-sd2-v6-v7/images",
             "./diffusion/diffusiondb-extra/images",
             "./diffusion/openprompts-extra/images",
+            "./diffusion/gpt-generated-sd2-v8",
+            "./diffusion/gpt-generated-sd2-v9",
+            "./diffusion/laion/images",
+            "./diffusion/cc3m-77-100/images",
+            "./diffusion/cc3m-48-77/images",
         ]
         extra_valid_dirs = ["./diffusion/image-to-prompt-extra-v1/validation"]
 
@@ -494,6 +536,7 @@ if __name__ == "__main__":
 
     print("train len", len(train_df))
     print("valid len", len(valid_df))
+    print(config.memo)
 
     train(
         train_df,
@@ -508,6 +551,7 @@ if __name__ == "__main__":
         config.output_path,
         config.scheduler_type,
         config.warmup_steps,
+        config.valid_steps,
         config.use_aug,
         config.use_amp,
         config.image_mean,
@@ -520,4 +564,5 @@ if __name__ == "__main__":
         backbone_weight_decay=config.backbone_weight_decay,
         head_weight_decay=config.head_weight_decay,
         milestones=config.milestones,
+        mix_embeds=config.mix_embeds,
     )

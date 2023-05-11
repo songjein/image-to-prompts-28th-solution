@@ -397,6 +397,13 @@ def bulid_dataframe(
             item = json.loads(line)
             if "hdcd" in item["file_name"]:
                 continue
+            # 0.5 확률로 파일명에 "gpt"를 포함하면 continue
+            # if (
+            #     "train" in images_dir
+            #     and "gpt" in item["file_name"]
+            #     and random.random() < 0.5
+            # ):
+            #     continue
             data_dict["filepath"].append(os.path.join(images_dir, item["file_name"]))
             data_dict["prompt"].append(item[target_label])
             data_dict["orig_prompt"].append(item["orig_text"])
@@ -410,7 +417,7 @@ if __name__ == "__main__":
     class Config(BaseModel):
         seed: int = 42
 
-        memo = "on_v7_11data"
+        memo = "on_v7_coco_half_gpt"
         model_name = "laion/CLIP-ViT-L-14-laion2B-s32B-b82K"
 
         hidden_size = 768
@@ -464,7 +471,7 @@ if __name__ == "__main__":
         backbone_weight_decay = 1e-4  # 1e-3  # AdamW for 백본 일반화
         head_weight_decay = 1e-5  # AdamW for 헤드 자유도
         milestones = [num_epochs // 3, 2 * num_epochs // 3]  # MultiStepLR용
-        warmup_steps: int = 200
+        warmup_steps: int = 500
         valid_steps: int = 1000
 
         target_label_name = "text"
@@ -482,14 +489,14 @@ if __name__ == "__main__":
         extra_train_dirs = [
             "./diffusion/image-to-prompt-extra-v1/train",
             "./diffusion/image-to-prompt-extra-v2/train",
-            "./diffusion/gpt-generated-sd2-v6-v7/images",
             "./diffusion/diffusiondb-extra/images",
             "./diffusion/openprompts-extra/images",
+            "./diffusion/gpt-generated-sd2-v6-v7/images",
             "./diffusion/gpt-generated-sd2-v8",
-            "./diffusion/gpt-generated-sd2-v9",
+            "./diffusion/gpt-generated-sd2-v9",  # gpt gen도 sub sample해서 하면 좋을 듯
             "./diffusion/laion/images",
             "./diffusion/cc3m-77-100/images",
-            "./diffusion/cc3m-48-77/images",
+            "./diffusion/coco-caps/images",
         ]
         extra_valid_dirs = ["./diffusion/image-to-prompt-extra-v1/validation"]
 
